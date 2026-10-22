@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   useWindowDimensions,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import {
   LayoutDashboard,
@@ -32,9 +33,12 @@ import {
   SlidersHorizontal,
   ChevronRight,
   Sparkles,
+  Database,
+  Link2,
 } from 'lucide-react-native';
 import { initialEvents, FestivalEvent, EventStatus } from './src/data';
 import { themes, ThemeMode, ThemeColors } from './src/theme';
+import { festivalApi } from './src/services/api';
 
 type Page = 'dashboard' | 'events' | 'form';
 const stages = ['MAIN STAGE', 'GARDEN', 'WAREHOUSE', 'RIVER STAGE'] as const;
@@ -53,6 +57,12 @@ export default function App() {
   const [stageFilter, setStageFilter] = useState<string>('TODOS');
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // API & Persistence State
+  const [backendSource, setBackendSource] = useState<'dynamodb' | 'local'>('local');
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiModalOpen, setApiModalOpen] = useState(false);
+  const [apiUrlInput, setApiUrlInput] = useState(festivalApi.getApiUrl());
+
   // Form Fields
   const [formArtist, setFormArtist] = useState('');
   const [formSpace, setFormSpace] = useState<string>(stages[0]);
@@ -61,6 +71,24 @@ export default function App() {
   const [feedback, setFeedback] = useState('');
 
   const t: ThemeColors = themes[themeMode];
+
+  // Fetch events on mount and when API URL changes
+  const loadEvents = async () => {
+    setIsLoading(true);
+    try {
+      const res = await festivalApi.getEvents();
+      setEvents(res.events);
+      setBackendSource(res.source);
+    } catch {
+      setBackendSource('local');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadEvents();
+  }, []);
 
   // Metrics
   const total = events.length;
@@ -115,62 +143,89 @@ export default function App() {
     setDrawerOpen(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formArtist.trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(formTime)) {
       setFeedback('Introduce el nombre del artista y una hora válida (HH:MM).');
       return;
     }
 
-    if (editingId) {
-      setEvents(prev =>
-        prev.map(e =>
-          e.id === editingId
-            ? {
-                ...e,
-                artist: formArtist.trim().toUpperCase(),
-                space: formSpace,
-                time: formTime,
-                status: formStatus,
-              }
-            : e
-        )
-      );
-      setFeedback(`Actuación "${formArtist.trim().toUpperCase()}" actualizada.`);
-    } else {
-      const newId = 'EVT-' + Math.floor(100 + Math.random() * 900);
-      setEvents(prev => [
-        {
-          id: newId,
+    setIsLoading(true);
+    try {
+      if (editingId) {
+        const res = await festivalApi.updateEvent(editingId, {
           artist: formArtist.trim().toUpperCase(),
           space: formSpace,
           time: formTime,
           status: formStatus,
-        },
-        ...prev,
-      ]);
-      setFeedback(`"${formArtist.trim().toUpperCase()}" añadida a la programación.`);
+        });
+        setEvents(prev => prev.map(e => (e.id === editingId ? res.event : e)));
+        setFeedback(
+          `Actuación "${res.event.artist}" guardada (${
+            res.source === 'dynamodb' ? 'en DynamoDB' : 'localmente'
+          }).`
+        );
+      } else {
+        const res = await festivalApi.createEvent({
+          artist: formArtist.trim().toUpperCase(),
+          space: formSpace,
+          time: formTime,
+          status: formStatus,
+        });
+        setEvents(prev => [res.event, ...prev]);
+        setFeedback(
+          `"${res.event.artist}" creada (${
+            res.source === 'dynamodb' ? 'en DynamoDB' : 'localmente'
+          }).`
+        );
+      }
+    } finally {
+      setIsLoading(false);
+      setPage('events');
     }
-    setPage('events');
   };
 
-  const handleCycleStatus = (id: string) => {
-    setEvents(prev =>
-      prev.map(e => {
-        if (e.id !== id) return e;
-        const next: EventStatus =
-          e.status === 'CONFIRMED'
-            ? 'DELAYED'
-            : e.status === 'DELAYED'
-            ? 'CANCELLED'
-            : 'CONFIRMED';
-        return { ...e, status: next };
-      })
-    );
+  const handleCycleStatus = async (id: string) => {
+    const current = events.find(e => e.id === id);
+    if (!current) return;
+
+    const next: EventStatus =
+      current.status === 'CONFIRMED'
+        ? 'DELAYED'
+        : current.status === 'DELAYED'
+        ? 'CANCELLED'
+        : 'CONFIRMED';
+
+    // Optimistic UI update
+    setEvents(prev => prev.map(e => (e.id === id ? { ...e, status: next } : e)));
+
+    try {
+      await festivalApi.updateEvent(id, { status: next });
+    } catch (err) {
+      console.warn('Error al persistir cambio de estado:', err);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    // Optimistic UI update
     setEvents(prev => prev.filter(e => e.id !== id));
     setFeedback('Actuación eliminada.');
+
+    try {
+      await festivalApi.deleteEvent(id);
+    } catch (err) {
+      console.warn('Error al eliminar:', err);
+    }
+  };
+
+  const handleConnectApi = async () => {
+    festivalApi.setApiUrl(apiUrlInput);
+    setApiModalOpen(false);
+    await loadEvents();
+    setFeedback(
+      apiUrlInput.trim()
+        ? 'URL de API Gateway guardada. Conectando con DynamoDB...'
+        : 'Modo local seleccionado.'
+    );
   };
 
   const toggleTheme = () => {
@@ -271,12 +326,29 @@ export default function App() {
             </View>
           )}
 
-          {/* Right: Live badge + Theme Switch + Operator Profile */}
+          {/* Right: DynamoDB Status Badge + Theme Switch + Profile */}
           <View style={styles.headerRight}>
-            <View style={[styles.liveChip, { backgroundColor: t.greenBg, borderColor: t.greenBorder }]}>
-              <View style={[styles.livePulse, { backgroundColor: t.green }]} />
-              <Text style={[styles.liveChipText, { color: t.green }]}>EN VIVO</Text>
-            </View>
+            {/* Backend DynamoDB Indicator */}
+            <Pressable
+              onPress={() => setApiModalOpen(true)}
+              style={[
+                styles.dbChip,
+                {
+                  backgroundColor: backendSource === 'dynamodb' ? t.greenBg : t.cardElevated,
+                  borderColor: backendSource === 'dynamodb' ? t.greenBorder : t.border,
+                },
+              ]}
+            >
+              <Database size={13} color={backendSource === 'dynamodb' ? t.green : t.textMuted} />
+              <Text
+                style={[
+                  styles.dbChipText,
+                  { color: backendSource === 'dynamodb' ? t.green : t.textMuted },
+                ]}
+              >
+                {backendSource === 'dynamodb' ? 'DynamoDB' : 'Local / Config'}
+              </Text>
+            </Pressable>
 
             <Pressable
               accessibilityLabel="Alternar modo claro y oscuro"
@@ -293,7 +365,7 @@ export default function App() {
                 </View>
                 <View>
                   <Text style={[styles.profileName, { color: t.text }]}>Operador ZGZ</Text>
-                  <Text style={[styles.profileRole, { color: t.textSub }]}>Control Central</Text>
+                  <Text style={[styles.profileRole, { color: t.textSub }]}>Live Operations</Text>
                 </View>
               </View>
             )}
@@ -350,6 +422,15 @@ export default function App() {
                     Nuevo
                   </Text>
                 </Pressable>
+
+                <Pressable
+                  accessibilityLabel="Configuración de DynamoDB"
+                  onPress={() => setApiModalOpen(true)}
+                  style={[styles.railBtn, { marginTop: 10 }]}
+                >
+                  <Database size={18} color={t.textMuted} />
+                  <Text style={[styles.railTooltip, { color: t.textSub }]}>API</Text>
+                </Pressable>
               </View>
 
               <View style={styles.railFooter}>
@@ -381,7 +462,10 @@ export default function App() {
             {/* Title Header with Search Bar */}
             <View style={styles.titleSection}>
               <View>
-                <Text style={[styles.kickerText, { color: t.textSub }]}>OPERACIONES Y HORARIOS EN DIRECTO</Text>
+                <View style={styles.kickerRow}>
+                  <Text style={[styles.kickerText, { color: t.textSub }]}>FESTIVAL CONTROL · LIVE OPERATIONS</Text>
+                  {isLoading && <ActivityIndicator size="small" color={t.primary} style={{ marginLeft: 8 }} />}
+                </View>
                 <Text style={[styles.h1Text, { color: t.text }]}>
                   {page === 'dashboard'
                     ? 'Panel de Control'
@@ -418,7 +502,9 @@ export default function App() {
                   <View style={styles.cardTopRow}>
                     <View>
                       <Text style={[styles.cardTitle, { color: t.text }]}>Próximas Actuaciones</Text>
-                      <Text style={[styles.cardSub, { color: t.textSub }]}>{events.length} programadas</Text>
+                      <Text style={[styles.cardSub, { color: t.textSub }]}>
+                        {events.length} programadas ({backendSource === 'dynamodb' ? 'DynamoDB' : 'Memoria local'})
+                      </Text>
                     </View>
                     <Pressable
                       accessibilityRole="button"
@@ -500,7 +586,9 @@ export default function App() {
                     <View style={styles.cardTopRow}>
                       <View>
                         <Text style={[styles.cardTitle, { color: t.text }]}>Estado General</Text>
-                        <Text style={[styles.cardSub, { color: t.textSub }]}>Métricas en vivo</Text>
+                        <Text style={[styles.cardSub, { color: t.textSub }]}>
+                          {backendSource === 'dynamodb' ? 'Sincronizado con DynamoDB' : 'Métricas en vivo'}
+                        </Text>
                       </View>
                       <View style={[styles.metricCountBadge, { backgroundColor: t.cardElevated }]}>
                         <Text style={[styles.metricCountText, { color: t.text }]}>{total} Actos</Text>
@@ -1019,8 +1107,21 @@ export default function App() {
                 ))}
               </View>
 
-              {/* Drawer Footer: Theme Toggle */}
+              {/* Drawer Footer: Theme Toggle & API Config */}
               <View style={[styles.drawerFooter, { borderTopColor: t.borderSubtle }]}>
+                <Pressable
+                  onPress={() => {
+                    setDrawerOpen(false);
+                    setApiModalOpen(true);
+                  }}
+                  style={[styles.drawerThemeBtn, { backgroundColor: t.cardElevated, borderColor: t.border, marginBottom: 8 }]}
+                >
+                  <Database size={16} color={backendSource === 'dynamodb' ? t.green : t.text} />
+                  <Text style={[styles.drawerThemeText, { color: t.text }]}>
+                    {backendSource === 'dynamodb' ? 'DynamoDB Conectado' : 'Conectar DynamoDB'}
+                  </Text>
+                </Pressable>
+
                 <Pressable
                   onPress={toggleTheme}
                   style={[styles.drawerThemeBtn, { backgroundColor: t.cardElevated, borderColor: t.border }]}
@@ -1035,6 +1136,75 @@ export default function App() {
           </View>
         </Modal>
       )}
+
+      {/* ===================== DYNAMODB / API GATEWAY MODAL ===================== */}
+      <Modal
+        visible={apiModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setApiModalOpen(false)}
+      >
+        <View style={[styles.drawerBackdrop, { backgroundColor: t.drawerOverlay, justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+          <Pressable style={styles.drawerBackdropPress} onPress={() => setApiModalOpen(false)} />
+          <View style={[styles.apiModalCard, { backgroundColor: t.shellBg, borderColor: t.border }]}>
+            <View style={styles.apiModalHeader}>
+              <View style={styles.apiModalTitleRow}>
+                <Database size={18} color={t.primary} />
+                <Text style={[styles.apiModalTitle, { color: t.text }]}>Conexión con Amazon DynamoDB</Text>
+              </View>
+              <Pressable onPress={() => setApiModalOpen(false)}>
+                <X size={18} color={t.textSub} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.apiModalText, { color: t.textSub }]}>
+              Pega la URL de tu API Gateway desplegada con la plantilla de backend (`template.yaml`). Si dejas el campo vacío, la app funcionará en modo local en memoria.
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: t.textMuted }]}>URL DE API GATEWAY (HTTP API)</Text>
+              <TextInput
+                placeholder="https://xxxx.execute-api.us-east-1.amazonaws.com"
+                placeholderTextColor={t.textSub}
+                style={[styles.textInput, { backgroundColor: t.inputBg, borderColor: t.inputBorder, color: t.text }]}
+                value={apiUrlInput}
+                onChangeText={setApiUrlInput}
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.apiModalStatusRow}>
+              <View
+                style={[
+                  styles.statusPill,
+                  {
+                    backgroundColor: backendSource === 'dynamodb' ? t.greenBg : t.cardElevated,
+                    borderColor: backendSource === 'dynamodb' ? t.greenBorder : t.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusPillText,
+                    { color: backendSource === 'dynamodb' ? t.green : t.textMuted },
+                  ]}
+                >
+                  Estado: {backendSource === 'dynamodb' ? 'Conectado a DynamoDB' : 'Almacén Local'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.formBtnRow}>
+              <Pressable onPress={handleConnectApi} style={[styles.saveBtn, { backgroundColor: t.primary }]}>
+                <Text style={[styles.saveBtnText, { color: t.primaryText }]}>Guardar y Sincronizar</Text>
+              </Pressable>
+              <Pressable onPress={() => setApiModalOpen(false)} style={[styles.cancelBtn, { borderColor: t.border }]}>
+                <Text style={[styles.cancelBtnText, { color: t.textMuted }]}>Cerrar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1117,24 +1287,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  liveChip: {
+  dbChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
   },
-  livePulse: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  liveChipText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  dbChipText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   iconBtn: {
     width: 36,
@@ -1250,6 +1414,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     flexWrap: 'wrap',
     gap: 16,
+  },
+  kickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   kickerText: {
     fontSize: 10,
@@ -1870,5 +2038,36 @@ const styles = StyleSheet.create({
   drawerThemeText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+
+  // API Configuration Modal
+  apiModalCard: {
+    width: '100%',
+    maxWidth: 500,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 24,
+    gap: 16,
+  },
+  apiModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  apiModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  apiModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  apiModalText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  apiModalStatusRow: {
+    flexDirection: 'row',
   },
 });

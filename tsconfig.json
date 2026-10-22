@@ -3,5 +3,10 @@
   "compilerOptions": {
     "strict": true,
     "esModuleInterop": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "backend",
+    "dist"
+  ]
 }

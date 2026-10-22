@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Backend Serverless para Festival Control (API Gateway + Lambda + DynamoDB)
+
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 256
+    Runtime: nodejs20.x
+
+Resources:
+  # 1. Tabla DynamoDB para almacenar los eventos
+  FestivalEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FestivalEvents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  # 2. API Gateway HTTP API con soporte CORS habilitado
+  FestivalHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Api-Key
+          - X-Amz-Date
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        MaxAge: 600
+
+  # 3. Función Lambda con permisos CRUD sobre DynamoDB
+  FestivalEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/
+      Handler: events.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref FestivalEventsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FestivalEventsTable
+      Events:
+        GetAllEvents:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref FestivalHttpApi
+            Path: /events
+            Method: GET
+        GetSingleEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref FestivalHttpApi
+            Path: /events/{id}
+            Method: GET
+        CreateEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref FestivalHttpApi
+            Path: /events
+            Method: POST
+        UpdateEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref FestivalHttpApi
+            Path: /events/{id}
+            Method: PUT
+        DeleteEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref FestivalHttpApi
+            Path: /events/{id}
+            Method: DELETE
+
+Outputs:
+  ApiUrl:
+    Description: URL pública de la API REST para el Frontend
+    Value: !Sub 'https://${FestivalHttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+  TableName:
+    Description: Nombre de la tabla DynamoDB
+    Value: !Ref FestivalEventsTable
