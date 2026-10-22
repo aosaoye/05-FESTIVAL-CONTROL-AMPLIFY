@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, View, Text, TextInput, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { initialEvents, FestivalEvent, EventStatus } from './src/data';
 import { theme as c } from './src/theme';
@@ -12,6 +12,7 @@ function Action({ label, onPress, secondary = false, danger = false }: {label: s
     <Text style={s.buttonText}>{label}</Text>
   </Pressable>;
 }
+
 function Status({value}: {value: EventStatus}) {
   const color = value === 'CONFIRMED' ? c.green : value === 'DELAYED' ? c.amber : c.red;
   return <Text style={[s.status, {color}]}>● {value}</Text>;
