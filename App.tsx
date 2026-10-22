@@ -9,12 +9,15 @@ import {
   StyleSheet,
   useWindowDimensions,
   Modal,
+  Platform,
+  StatusBar,
   ActivityIndicator,
 } from 'react-native';
+import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import {
   LayoutDashboard,
   Calendar,
-  PlusCircle,
+  Plus,
   Menu,
   X,
   Search,
@@ -22,22 +25,25 @@ import {
   Sun,
   Clock,
   MapPin,
-  CheckCircle2,
-  AlertCircle,
-  XCircle,
+  Check,
   Trash2,
   Edit3,
   RefreshCw,
   User,
-  Radio,
   SlidersHorizontal,
-  ChevronRight,
-  Sparkles,
+  ArrowUpRight,
+  Bell,
+  Mail,
+  HelpCircle,
+  Settings,
+  Folder,
+  CheckSquare,
+  Users,
   Database,
-  Link2,
+  Radio,
+  Music,
 } from 'lucide-react-native';
 import { initialEvents, FestivalEvent, EventStatus } from './src/data';
-import { themes, ThemeMode, ThemeColors } from './src/theme';
 import { festivalApi } from './src/services/api';
 
 type Page = 'dashboard' | 'events' | 'form';
@@ -46,15 +52,19 @@ const statuses: EventStatus[] = ['CONFIRMED', 'DELAYED', 'CANCELLED'];
 
 export default function App() {
   const { width } = useWindowDimensions();
-  const wide = width >= 920;
+  const wide = width >= 1024;
+  const medium = width >= 768;
 
-  // State
-  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
+  // Navigation & Theme
   const [page, setPage] = useState<Page>('dashboard');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+
+  // Data State
   const [events, setEvents] = useState<FestivalEvent[]>(initialEvents);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('TODOS');
+  const [dateFilter, setDateFilter] = useState<'HOY' | 'MANANA'>('HOY');
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // API & Persistence State
@@ -70,9 +80,7 @@ export default function App() {
   const [formStatus, setFormStatus] = useState<EventStatus>('CONFIRMED');
   const [feedback, setFeedback] = useState('');
 
-  const t: ThemeColors = themes[themeMode];
-
-  // Fetch events on mount and when API URL changes
+  // Load events
   const loadEvents = async () => {
     setIsLoading(true);
     try {
@@ -100,12 +108,6 @@ export default function App() {
   const delayedPct = total > 0 ? Math.round((delayed / total) * 100) : 0;
   const cancelledPct = total > 0 ? Math.round((cancelled / total) * 100) : 0;
 
-  // Next headliner or confirmed act
-  const headliner = useMemo(
-    () => events.find(e => e.space === 'MAIN STAGE' && e.status === 'CONFIRMED') || events[0],
-    [events]
-  );
-
   // Filtered Events
   const filteredEvents = useMemo(() => {
     return events.filter(e => {
@@ -120,7 +122,7 @@ export default function App() {
     });
   }, [events, search, stageFilter]);
 
-  // Actions
+  // Handlers
   const openNew = () => {
     setEditingId(null);
     setFormArtist('');
@@ -159,11 +161,7 @@ export default function App() {
           status: formStatus,
         });
         setEvents(prev => prev.map(e => (e.id === editingId ? res.event : e)));
-        setFeedback(
-          `Actuación "${res.event.artist}" guardada (${
-            res.source === 'dynamodb' ? 'en DynamoDB' : 'localmente'
-          }).`
-        );
+        setFeedback(`Actuación "${res.event.artist}" actualizada (${res.source === 'dynamodb' ? 'DynamoDB' : 'Local'}).`);
       } else {
         const res = await festivalApi.createEvent({
           artist: formArtist.trim().toUpperCase(),
@@ -172,11 +170,7 @@ export default function App() {
           status: formStatus,
         });
         setEvents(prev => [res.event, ...prev]);
-        setFeedback(
-          `"${res.event.artist}" creada (${
-            res.source === 'dynamodb' ? 'en DynamoDB' : 'localmente'
-          }).`
-        );
+        setFeedback(`"${res.event.artist}" añadida al cartel (${res.source === 'dynamodb' ? 'DynamoDB' : 'Local'}).`);
       }
     } finally {
       setIsLoading(false);
@@ -195,21 +189,17 @@ export default function App() {
         ? 'CANCELLED'
         : 'CONFIRMED';
 
-    // Optimistic UI update
     setEvents(prev => prev.map(e => (e.id === id ? { ...e, status: next } : e)));
-
     try {
       await festivalApi.updateEvent(id, { status: next });
     } catch (err) {
-      console.warn('Error al persistir cambio de estado:', err);
+      console.warn('Error al actualizar estado:', err);
     }
   };
 
   const handleDelete = async (id: string) => {
-    // Optimistic UI update
     setEvents(prev => prev.filter(e => e.id !== id));
-    setFeedback('Actuación eliminada.');
-
+    setFeedback('Actuación eliminada del cartel.');
     try {
       await festivalApi.deleteEvent(id);
     } catch (err) {
@@ -221,151 +211,138 @@ export default function App() {
     festivalApi.setApiUrl(apiUrlInput);
     setApiModalOpen(false);
     await loadEvents();
-    setFeedback(
-      apiUrlInput.trim()
-        ? 'URL de API Gateway guardada. Conectando con DynamoDB...'
-        : 'Modo local seleccionado.'
-    );
   };
 
-  const toggleTheme = () => {
-    setThemeMode(prev => (prev === 'dark' ? 'light' : 'dark'));
+  // Stage card colors (soft pastel tinted square badges like Panze tasks)
+  const getStageMeta = (space: string) => {
+    switch (space) {
+      case 'MAIN STAGE':
+        return { bg: '#FFEDD5', color: '#EA580C', icon: '⚡' };
+      case 'GARDEN':
+        return { bg: '#DCFCE7', color: '#16A34A', icon: '🌿' };
+      case 'WAREHOUSE':
+        return { bg: '#F3E8FF', color: '#9333EA', icon: '🏛️' };
+      case 'RIVER STAGE':
+      default:
+        return { bg: '#E0F2FE', color: '#0284C7', icon: '🌊' };
+    }
   };
 
-  const getStatusBadge = (status: EventStatus) => {
-    if (status === 'CONFIRMED') {
-      return {
-        bg: t.greenBg,
-        border: t.greenBorder,
-        color: t.green,
-        label: 'Confirmado',
-        Icon: CheckCircle2,
-      };
-    }
-    if (status === 'DELAYED') {
-      return {
-        bg: t.amberBg,
-        border: t.amberBorder,
-        color: t.amber,
-        label: 'Retrasado',
-        Icon: AlertCircle,
-      };
-    }
-    return {
-      bg: t.redBg,
-      border: t.redBorder,
-      color: t.red,
-      label: 'Cancelado',
-      Icon: XCircle,
-    };
+  // Colors based on Light/Dark
+  const c = {
+    canvasBg: isDark ? '#090D14' : '#E8EEF5',
+    cardBg: isDark ? '#121722' : '#FFFFFF',
+    innerCard: isDark ? '#192030' : '#F8FAFC',
+    border: isDark ? '#232C3F' : '#EEF2F6',
+    borderSubtle: isDark ? '#1D2536' : '#F1F5F9',
+    text: isDark ? '#F8FAFC' : '#0F172A',
+    textMuted: isDark ? '#94A3B8' : '#64748B',
+    textSub: isDark ? '#64748B' : '#94A3B8',
+    pillActive: isDark ? '#FFFFFF' : '#0F172A',
+    pillActiveText: isDark ? '#0F172A' : '#FFFFFF',
+    railActive: isDark ? '#1E2738' : '#0F172A',
+    railActiveIcon: isDark ? '#38BDF8' : '#FFFFFF',
+    railIcon: isDark ? '#64748B' : '#94A3B8',
   };
 
   return (
-    <SafeAreaView style={[styles.viewport, { backgroundColor: t.bg }]}>
-      {/* ===================== FLOATING APPLICATION SHELL ===================== */}
-      <View style={[styles.shell, { backgroundColor: t.shellBg, borderColor: t.border }]}>
-        {/* ===================== GLOBAL PERSISTENT HEADER ===================== */}
-        <View style={[styles.globalHeader, { borderBottomColor: t.borderSubtle }]}>
-          {/* Left: Mobile Drawer Trigger / Brand */}
-          <View style={styles.headerLeft}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: c.canvasBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+
+      {/* Floating Outer Shell (Panze Studio Aesthetic) */}
+      <View style={[styles.outerShell, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+        {/* ===================== TOP GLOBAL HEADER ===================== */}
+        <View style={[styles.topHeader, { borderBottomColor: c.borderSubtle }]}>
+          {/* Brand */}
+          <View style={styles.brandRow}>
             {!wide && (
               <Pressable
-                accessibilityLabel="Abrir menú de navegación"
                 onPress={() => setDrawerOpen(true)}
-                style={[styles.hamburgerBtn, { borderColor: t.border, backgroundColor: t.cardElevated }]}
+                style={[styles.mobileMenuBtn, { backgroundColor: c.innerCard, borderColor: c.border }]}
               >
-                <Menu size={18} color={t.text} />
+                <Menu size={18} color={c.text} />
               </Pressable>
             )}
 
-            <View style={styles.brandGroup}>
-              <View style={[styles.brandMark, { backgroundColor: t.primary }]}>
-                <Radio size={14} color={t.primaryText} />
-              </View>
-              <View>
-                <Text style={[styles.brandName, { color: t.text }]}>FestOps</Text>
-                <Text style={[styles.brandTag, { color: t.textSub }]}>ZARAGOZA · 2026</Text>
-              </View>
+            <View style={styles.logoGroup}>
+              <Text style={[styles.logoBold, { color: c.text }]}>fest</Text>
+              <Text style={[styles.logoSub, { color: c.textMuted }]}>ops.</Text>
             </View>
           </View>
 
-          {/* Center: Stage quick selector pills (Desktop) */}
-          {wide && (
-            <View style={styles.headerCenter}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.headerPills}>
-                {['TODOS', ...stages].map(st => {
-                  const active = stageFilter === st;
-                  return (
-                    <Pressable
-                      key={st}
-                      onPress={() => {
-                        setStageFilter(st);
-                        if (page === 'form') setPage('dashboard');
-                      }}
+          {/* Center: Stage/Time Segmented Pills (Desktop) */}
+          {medium && (
+            <View style={[styles.segmentedContainer, { backgroundColor: c.innerCard, borderColor: c.border }]}>
+              {['TODOS', 'MAIN STAGE', 'GARDEN', 'WAREHOUSE'].map(st => {
+                const active = stageFilter === st;
+                return (
+                  <Pressable
+                    key={st}
+                    onPress={() => {
+                      setStageFilter(st);
+                      if (page === 'form') setPage('dashboard');
+                    }}
+                    style={[
+                      styles.segmentPill,
+                      active && [styles.segmentPillActive, { backgroundColor: c.pillActive }],
+                    ]}
+                  >
+                    <Text
                       style={[
-                        styles.headerPill,
-                        {
-                          backgroundColor: active ? t.primary : t.cardElevated,
-                          borderColor: active ? t.primary : t.border,
-                        },
+                        styles.segmentPillText,
+                        { color: active ? c.pillActiveText : c.textMuted },
+                        active && { fontWeight: '700' },
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.headerPillText,
-                          { color: active ? t.primaryText : t.textMuted },
-                          active && { fontWeight: '700' },
-                        ]}
-                      >
-                        {st}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
+                      {st}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
 
-          {/* Right: DynamoDB Status Badge + Theme Switch + Profile */}
-          <View style={styles.headerRight}>
-            {/* Backend DynamoDB Indicator */}
+          {/* Right Utilities + User Profile */}
+          <View style={styles.utilitiesRow}>
+            {/* Backend DynamoDB Chip */}
             <Pressable
               onPress={() => setApiModalOpen(true)}
               style={[
-                styles.dbChip,
+                styles.headerActionCircle,
                 {
-                  backgroundColor: backendSource === 'dynamodb' ? t.greenBg : t.cardElevated,
-                  borderColor: backendSource === 'dynamodb' ? t.greenBorder : t.border,
+                  backgroundColor: backendSource === 'dynamodb' ? '#DCFCE7' : c.innerCard,
+                  borderColor: backendSource === 'dynamodb' ? '#86EFAC' : c.border,
                 },
               ]}
+              accessibilityLabel="Configuración DynamoDB"
             >
-              <Database size={13} color={backendSource === 'dynamodb' ? t.green : t.textMuted} />
-              <Text
-                style={[
-                  styles.dbChipText,
-                  { color: backendSource === 'dynamodb' ? t.green : t.textMuted },
-                ]}
-              >
-                {backendSource === 'dynamodb' ? 'DynamoDB' : 'Local / Config'}
-              </Text>
+              <Database size={15} color={backendSource === 'dynamodb' ? '#16A34A' : c.textMuted} />
             </Pressable>
 
+            {/* Theme Switcher Button */}
             <Pressable
-              accessibilityLabel="Alternar modo claro y oscuro"
-              onPress={toggleTheme}
-              style={[styles.iconBtn, { borderColor: t.border, backgroundColor: t.cardElevated }]}
+              onPress={() => setIsDark(!isDark)}
+              style={[styles.headerActionCircle, { backgroundColor: c.innerCard, borderColor: c.border }]}
+              accessibilityLabel="Cambiar tema"
             >
-              {themeMode === 'dark' ? <Sun size={16} color={t.text} /> : <Moon size={16} color={t.text} />}
+              {isDark ? <Sun size={15} color={c.text} /> : <Moon size={15} color={c.text} />}
             </Pressable>
 
+            {/* Notification Bell with unread dot */}
+            <View style={[styles.headerActionCircle, { backgroundColor: c.innerCard, borderColor: c.border }]}>
+              <Bell size={15} color={c.textMuted} />
+              <View style={styles.unreadDot} />
+            </View>
+
+            {/* Operator Profile Chip */}
             {wide && (
-              <View style={[styles.profileChip, { borderColor: t.border, backgroundColor: t.cardElevated }]}>
-                <View style={[styles.profileAvatar, { backgroundColor: t.primary }]}>
-                  <User size={13} color={t.primaryText} />
+              <View style={styles.userProfileChip}>
+                <View style={styles.userAvatar}>
+                  <Text style={styles.avatarText}>OP</Text>
                 </View>
                 <View>
-                  <Text style={[styles.profileName, { color: t.text }]}>Operador ZGZ</Text>
-                  <Text style={[styles.profileRole, { color: t.textSub }]}>Live Operations</Text>
+                  <Text style={[styles.userName, { color: c.text }]}>Operador ZGZ</Text>
+                  <Text style={[styles.userRole, { color: c.textSub }]}>Live Director</Text>
                 </View>
               </View>
             )}
@@ -373,339 +350,449 @@ export default function App() {
         </View>
 
         {/* ===================== BODY: RAIL + WORKSPACE ===================== */}
-        <View style={styles.shellBody}>
-          {/* Desktop Left Rail Navigation (panze studio style) */}
+        <View style={styles.bodyLayout}>
+          {/* Desktop Left Icon Rail */}
           {wide && (
-            <View style={[styles.leftRail, { borderRightColor: t.borderSubtle, backgroundColor: t.railBg }]}>
-              <View style={styles.railNavGroup}>
+            <View style={[styles.iconRail, { borderRightColor: c.borderSubtle }]}>
+              <View style={styles.railTopGroup}>
+                {/* Dashboard Active Pill */}
                 <Pressable
-                  accessibilityLabel="Ir al Dashboard"
                   onPress={() => setPage('dashboard')}
                   style={[
-                    styles.railBtn,
-                    page === 'dashboard' && [styles.railBtnActive, { backgroundColor: t.railActive }],
+                    styles.railIconCircle,
+                    page === 'dashboard' && [styles.railIconCircleActive, { backgroundColor: c.railActive }],
                   ]}
                 >
-                  <LayoutDashboard size={20} color={page === 'dashboard' ? t.text : t.textMuted} />
-                  <Text style={[styles.railTooltip, { color: page === 'dashboard' ? t.text : t.textSub }]}>
-                    Panel
-                  </Text>
+                  <LayoutDashboard
+                    size={19}
+                    color={page === 'dashboard' ? c.railActiveIcon : c.railIcon}
+                  />
                 </Pressable>
 
+                {/* Events Link */}
                 <Pressable
-                  accessibilityLabel="Ir a Programación"
                   onPress={() => setPage('events')}
                   style={[
-                    styles.railBtn,
-                    page === 'events' && [styles.railBtnActive, { backgroundColor: t.railActive }],
+                    styles.railIconCircle,
+                    page === 'events' && [styles.railIconCircleActive, { backgroundColor: c.railActive }],
                   ]}
                 >
-                  <Calendar size={20} color={page === 'events' ? t.text : t.textMuted} />
-                  <Text style={[styles.railTooltip, { color: page === 'events' ? t.text : t.textSub }]}>
-                    Eventos
-                  </Text>
-                  <View style={[styles.railBadge, { backgroundColor: t.primary }]}>
-                    <Text style={[styles.railBadgeText, { color: t.primaryText }]}>{events.length}</Text>
-                  </View>
+                  <Calendar size={19} color={page === 'events' ? c.railActiveIcon : c.railIcon} />
                 </Pressable>
 
+                {/* Add Event Link */}
                 <Pressable
-                  accessibilityLabel="Crear nuevo evento"
                   onPress={openNew}
                   style={[
-                    styles.railBtn,
-                    page === 'form' && !editingId && [styles.railBtnActive, { backgroundColor: t.railActive }],
+                    styles.railIconCircle,
+                    page === 'form' && !editingId && [styles.railIconCircleActive, { backgroundColor: c.railActive }],
                   ]}
                 >
-                  <PlusCircle size={20} color={page === 'form' ? t.text : t.textMuted} />
-                  <Text style={[styles.railTooltip, { color: page === 'form' ? t.text : t.textSub }]}>
-                    Nuevo
-                  </Text>
+                  <Plus size={19} color={page === 'form' ? c.railActiveIcon : c.railIcon} />
                 </Pressable>
 
+                {/* Stages shortcut */}
                 <Pressable
-                  accessibilityLabel="Configuración de DynamoDB"
-                  onPress={() => setApiModalOpen(true)}
-                  style={[styles.railBtn, { marginTop: 10 }]}
+                  onPress={() => {
+                    setStageFilter('TODOS');
+                    setPage('events');
+                  }}
+                  style={styles.railIconCircle}
                 >
-                  <Database size={18} color={t.textMuted} />
-                  <Text style={[styles.railTooltip, { color: t.textSub }]}>API</Text>
+                  <Music size={19} color={c.railIcon} />
+                </Pressable>
+
+                <Pressable onPress={() => setApiModalOpen(true)} style={styles.railIconCircle}>
+                  <Database size={19} color={c.railIcon} />
                 </Pressable>
               </View>
 
-              <View style={styles.railFooter}>
-                <Pressable
-                  accessibilityLabel="Cambiar tema"
-                  onPress={toggleTheme}
-                  style={[styles.railBtn, { backgroundColor: t.cardElevated, borderColor: t.border, borderWidth: 1 }]}
-                >
-                  {themeMode === 'dark' ? <Sun size={18} color={t.text} /> : <Moon size={18} color={t.text} />}
+              <View style={styles.railBottomGroup}>
+                <Pressable onPress={() => setIsDark(!isDark)} style={styles.railIconCircle}>
+                  {isDark ? <Sun size={18} color={c.railIcon} /> : <Moon size={18} color={c.railIcon} />}
                 </Pressable>
               </View>
             </View>
           )}
 
-          {/* ===================== WORKSPACE SCROLL CONTENT ===================== */}
+          {/* ===================== MAIN SCROLL AREA ===================== */}
           <ScrollView
             style={styles.workspaceScroll}
-            contentContainerStyle={styles.workspaceContainer}
+            contentContainerStyle={styles.workspaceContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Feedback notification banner */}
-            {!!feedback && (
-              <View style={[styles.feedbackBanner, { backgroundColor: t.greenBg, borderColor: t.greenBorder }]}>
-                <CheckCircle2 size={16} color={t.green} />
-                <Text style={[styles.feedbackText, { color: t.green }]}>{feedback}</Text>
-              </View>
-            )}
-
-            {/* Title Header with Search Bar */}
-            <View style={styles.titleSection}>
+            {/* Page Header Section: Title & Search Pill */}
+            <View style={styles.subHeaderRow}>
               <View>
-                <View style={styles.kickerRow}>
-                  <Text style={[styles.kickerText, { color: t.textSub }]}>FESTIVAL CONTROL · LIVE OPERATIONS</Text>
-                  {isLoading && <ActivityIndicator size="small" color={t.primary} style={{ marginLeft: 8 }} />}
-                </View>
-                <Text style={[styles.h1Text, { color: t.text }]}>
+                <Text style={[styles.subHeaderKicker, { color: c.textMuted }]}>
+                  Manage and track festival operations
+                </Text>
+                <Text style={[styles.subHeaderTitle, { color: c.text }]}>
                   {page === 'dashboard'
-                    ? 'Panel de Control'
+                    ? 'Festival Dashboard'
                     : page === 'events'
-                    ? 'Programación del Festival'
+                    ? 'Programación'
                     : editingId
                     ? 'Editar Actuación'
-                    : 'Añadir Actuación'}
+                    : 'Nueva Actuación'}
                 </Text>
               </View>
 
-              <View style={[styles.searchBox, { backgroundColor: t.inputBg, borderColor: t.inputBorder }]}>
-                <Search size={16} color={t.textSub} />
+              {/* Large Search Pill (Panze Studio Style) */}
+              <View style={[styles.searchPill, { backgroundColor: c.innerCard, borderColor: c.border }]}>
+                <Search size={16} color={c.textSub} />
                 <TextInput
                   placeholder="Buscar artista, escenario, ID..."
-                  placeholderTextColor={t.textSub}
-                  style={[styles.searchInput, { color: t.text }]}
+                  placeholderTextColor={c.textSub}
+                  style={[styles.searchPillInput, { color: c.text }]}
                   value={search}
                   onChangeText={setSearch}
                 />
                 {!!search && (
                   <Pressable onPress={() => setSearch('')}>
-                    <X size={14} color={t.textSub} />
+                    <X size={14} color={c.textSub} />
                   </Pressable>
                 )}
               </View>
             </View>
 
-            {/* ===================== PAGE: DASHBOARD ===================== */}
+            {/* Notification alert banner */}
+            {!!feedback && (
+              <View style={[styles.feedbackChip, { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }]}>
+                <Check size={14} color="#16A34A" />
+                <Text style={styles.feedbackChipText}>{feedback}</Text>
+              </View>
+            )}
+
+            {/* ===================== VIEW: DASHBOARD (3 COLUMNS) ===================== */}
             {page === 'dashboard' && (
-              <View style={styles.dashboardGrid}>
-                {/* Column 1: Timeline / Live Feed ("Transactions" style) */}
-                <View style={[styles.dashCard, { backgroundColor: t.card, borderColor: t.border }]}>
-                  <View style={styles.cardTopRow}>
-                    <View>
-                      <Text style={[styles.cardTitle, { color: t.text }]}>Próximas Actuaciones</Text>
-                      <Text style={[styles.cardSub, { color: t.textSub }]}>
-                        {events.length} programadas ({backendSource === 'dynamodb' ? 'DynamoDB' : 'Memoria local'})
-                      </Text>
-                    </View>
+              <View style={[styles.dashboardGrid, wide && styles.dashboardGridDesktop]}>
+                {/* ---------------- COLUMN 1: "My Tasks" style -> Actuaciones ---------------- */}
+                <View style={[styles.columnCard, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+                  {/* Card Header */}
+                  <View style={styles.cardHeaderRow}>
+                    <Text style={[styles.cardHeading, { color: c.text }]}>Actuaciones</Text>
                     <Pressable
-                      accessibilityRole="button"
                       onPress={openNew}
-                      style={[styles.smallActionBtn, { backgroundColor: t.cardElevated, borderColor: t.border }]}
+                      style={[styles.plusCircleBtn, { backgroundColor: c.innerCard, borderColor: c.border }]}
                     >
-                      <PlusCircle size={14} color={t.text} />
-                      <Text style={[styles.smallActionBtnText, { color: t.text }]}>Añadir</Text>
+                      <Plus size={16} color={c.text} />
                     </Pressable>
                   </View>
 
-                  <View style={styles.feedList}>
-                    {events.slice(0, 5).map(e => {
-                      const badge = getStatusBadge(e.status);
-                      const BadgeIcon = badge.Icon;
+                  {/* Filter Pills: Hoy / Mañana */}
+                  <View style={styles.tasksFilterRow}>
+                    <Pressable
+                      onPress={() => setDateFilter('HOY')}
+                      style={[
+                        styles.taskFilterPill,
+                        dateFilter === 'HOY' && [styles.taskFilterPillActive, { backgroundColor: c.pillActive }],
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.taskFilterPillText,
+                          { color: dateFilter === 'HOY' ? c.pillActiveText : c.textMuted },
+                        ]}
+                      >
+                        Hoy
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => setDateFilter('MANANA')}
+                      style={[
+                        styles.taskFilterPill,
+                        dateFilter === 'MANANA' && [styles.taskFilterPillActive, { backgroundColor: c.pillActive }],
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.taskFilterPillText,
+                          { color: dateFilter === 'MANANA' ? c.pillActiveText : c.textMuted },
+                        ]}
+                      >
+                        Mañana
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {/* On Going summary badge */}
+                  <View style={[styles.ongoingBadge, { backgroundColor: c.innerCard }]}>
+                    <View style={styles.ongoingLeft}>
+                      <View style={[styles.ongoingCountCircle, { backgroundColor: c.text }]}>
+                        <Text style={[styles.ongoingCountText, { color: c.cardBg }]}>{events.length}</Text>
+                      </View>
+                      <Text style={[styles.ongoingText, { color: c.text }]}>En Programación</Text>
+                    </View>
+                    <Text style={{ fontSize: 11, color: c.textSub }}>▾</Text>
+                  </View>
+
+                  {/* Task Style Event Cards */}
+                  <View style={styles.taskCardsList}>
+                    {events.slice(0, 4).map(e => {
+                      const meta = getStageMeta(e.space);
+                      const isConfirmed = e.status === 'CONFIRMED';
+                      const isDelayed = e.status === 'DELAYED';
+
                       return (
                         <View
                           key={e.id}
-                          style={[styles.feedRow, { borderColor: t.borderSubtle, backgroundColor: t.cardElevated }]}
+                          style={[
+                            styles.taskCard,
+                            { backgroundColor: c.innerCard, borderColor: c.borderSubtle },
+                          ]}
                         >
-                          <View style={styles.feedRowMain}>
-                            <View style={[styles.timeBox, { backgroundColor: t.borderSubtle }]}>
-                              <Clock size={12} color={t.textMuted} />
-                              <Text style={[styles.timeBoxText, { color: t.text }]}>{e.time}</Text>
-                            </View>
-
-                            <View style={styles.artistInfo}>
-                              <Text style={[styles.artistName, { color: t.text }]}>{e.artist}</Text>
-                              <View style={styles.stageLocationRow}>
-                                <MapPin size={11} color={t.textSub} />
-                                <Text style={[styles.stageLocationText, { color: t.textSub }]}>
-                                  {e.space} · {e.id}
-                                </Text>
-                              </View>
-                            </View>
-
-                            <Pressable
-                              onPress={() => handleCycleStatus(e.id)}
-                              style={[
-                                styles.statusPill,
-                                { backgroundColor: badge.bg, borderColor: badge.border },
-                              ]}
-                            >
-                              <BadgeIcon size={12} color={badge.color} />
-                              <Text style={[styles.statusPillText, { color: badge.color }]}>
-                                {badge.label}
-                              </Text>
-                            </Pressable>
+                          {/* Left: Soft pastel square badge */}
+                          <View style={[styles.taskSquareBadge, { backgroundColor: meta.bg }]}>
+                            <Text style={styles.taskSquareEmoji}>{meta.icon}</Text>
                           </View>
 
-                          <View style={[styles.rowActions, { borderTopColor: t.borderSubtle }]}>
-                            <Pressable onPress={() => openEdit(e)} style={styles.actionLink}>
-                              <Edit3 size={12} color={t.textMuted} />
-                              <Text style={[styles.actionLinkText, { color: t.textMuted }]}>Editar</Text>
-                            </Pressable>
-                            <Pressable onPress={() => handleCycleStatus(e.id)} style={styles.actionLink}>
-                              <RefreshCw size={12} color={t.primary} />
-                              <Text style={[styles.actionLinkText, { color: t.primary }]}>Cambiar Estado</Text>
-                            </Pressable>
-                            <Pressable onPress={() => handleDelete(e.id)} style={styles.actionLink}>
-                              <Trash2 size={12} color={t.red} />
-                              <Text style={[styles.actionLinkText, { color: t.red }]}>Eliminar</Text>
-                            </Pressable>
+                          {/* Center info */}
+                          <View style={styles.taskCardBody}>
+                            <Text style={[styles.taskArtistName, { color: c.text }]} numberOfLines={1}>
+                              {e.artist}
+                            </Text>
+                            <Text style={[styles.taskStageTime, { color: c.textSub }]} numberOfLines={1}>
+                              {e.space} · {e.time}
+                            </Text>
                           </View>
+
+                          {/* Right: Circular Check Button */}
+                          <Pressable
+                            onPress={() => handleCycleStatus(e.id)}
+                            style={[
+                              styles.taskCheckCircle,
+                              isConfirmed && styles.taskCheckConfirmed,
+                              isDelayed && styles.taskCheckDelayed,
+                            ]}
+                          >
+                            <Check
+                              size={12}
+                              color={isConfirmed ? '#16A34A' : isDelayed ? '#D97706' : '#DC2626'}
+                            />
+                          </Pressable>
                         </View>
                       );
                     })}
                   </View>
 
-                  <Pressable onPress={() => setPage('events')} style={styles.viewAllFooter}>
-                    <Text style={[styles.viewAllText, { color: t.primary }]}>Ver toda la programación →</Text>
+                  <Pressable onPress={() => setPage('events')} style={styles.viewMoreRow}>
+                    <Text style={[styles.viewMoreText, { color: c.textMuted }]}>Ver todo el cartel →</Text>
                   </Pressable>
                 </View>
 
-                {/* Column 2: Status Distribution & Headliner Card */}
-                <View style={styles.dashColMiddle}>
-                  {/* Status Progress Bars (panze studio invoice/project overview style) */}
-                  <View style={[styles.dashCard, { backgroundColor: t.card, borderColor: t.border }]}>
-                    <View style={styles.cardTopRow}>
-                      <View>
-                        <Text style={[styles.cardTitle, { color: t.text }]}>Estado General</Text>
-                        <Text style={[styles.cardSub, { color: t.textSub }]}>
-                          {backendSource === 'dynamodb' ? 'Sincronizado con DynamoDB' : 'Métricas en vivo'}
-                        </Text>
+                {/* ---------------- COLUMN 2: Projects Overview & Wave & Progress Bars ---------------- */}
+                <View style={styles.centerColGroup}>
+                  {/* Top: Donut Chart (Projects Overview) & Wave Chart (Income vs Expense) */}
+                  <View style={[styles.middleSplitRow, medium && styles.middleSplitRowDesktop]}>
+                    {/* Projects Overview: Donut Chart */}
+                    <View style={[styles.columnCard, { flex: 1, backgroundColor: c.cardBg, borderColor: c.border }]}>
+                      <View style={styles.cardHeaderRow}>
+                        <Text style={[styles.cardHeading, { color: c.text }]}>Resumen Estados</Text>
+                        <ArrowUpRight size={16} color={c.textMuted} />
                       </View>
-                      <View style={[styles.metricCountBadge, { backgroundColor: t.cardElevated }]}>
-                        <Text style={[styles.metricCountText, { color: t.text }]}>{total} Actos</Text>
+
+                      {/* Donut Chart with SVG */}
+                      <View style={styles.donutCenterWrap}>
+                        <Svg width={110} height={110} viewBox="0 0 100 100">
+                          {/* Gray Track */}
+                          <Circle cx="50" cy="50" r="38" stroke={isDark ? '#232C3F' : '#E2E8F0'} strokeWidth="11" fill="none" />
+                          {/* Emerald confirmed arc */}
+                          <Circle
+                            cx="50"
+                            cy="50"
+                            r="38"
+                            stroke="#0284C7"
+                            strokeWidth="11"
+                            strokeDasharray="238"
+                            strokeDashoffset={238 - (238 * confirmedPct) / 100}
+                            strokeLinecap="round"
+                            fill="none"
+                            rotation="-90"
+                            origin="50, 50"
+                          />
+                          {/* Amber delayed arc */}
+                          <Circle
+                            cx="50"
+                            cy="50"
+                            r="38"
+                            stroke="#F97316"
+                            strokeWidth="11"
+                            strokeDasharray="238"
+                            strokeDashoffset={238 - (238 * delayedPct) / 100}
+                            strokeLinecap="round"
+                            fill="none"
+                            rotation={confirmedPct * 3.6 - 90}
+                            origin="50, 50"
+                          />
+                        </Svg>
+                      </View>
+
+                      {/* Donut Legend */}
+                      <View style={styles.donutLegendRow}>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendDot, { backgroundColor: '#F97316' }]} />
+                          <Text style={[styles.legendText, { color: c.textMuted }]}>
+                            Retrasados: {delayed}
+                          </Text>
+                        </View>
+                        <View style={styles.legendItem}>
+                          <View style={[styles.legendDot, { backgroundColor: '#0284C7' }]} />
+                          <Text style={[styles.legendText, { color: c.textMuted }]}>
+                            Confirmados: {confirmed}
+                          </Text>
+                        </View>
                       </View>
                     </View>
 
-                    {/* Bars */}
-                    <View style={styles.barsGroup}>
+                    {/* Wave Chart (Income vs Expense style) */}
+                    <View style={[styles.columnCard, { flex: 1, backgroundColor: c.cardBg, borderColor: c.border }]}>
+                      <View style={styles.cardHeaderRow}>
+                        <Text style={[styles.cardHeading, { color: c.text }]}>Horarios / Aforo</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          <SlidersHorizontal size={14} color={c.textMuted} />
+                          <ArrowUpRight size={14} color={c.textMuted} />
+                        </View>
+                      </View>
+
+                      {/* Legend info */}
+                      <View style={styles.waveLegendInfo}>
+                        <Text style={{ fontSize: 10, color: '#0284C7', fontWeight: '700' }}>
+                          ● Main Stage: 22h - 02h
+                        </Text>
+                        <Text style={{ fontSize: 10, color: '#F97316', fontWeight: '700' }}>
+                          ● Secundarios: 20h - 04h
+                        </Text>
+                      </View>
+
+                      {/* Smooth SVG Wave Line Chart */}
+                      <View style={styles.waveSvgWrap}>
+                        <Svg width="100%" height={65} viewBox="0 0 200 65" preserveAspectRatio="none">
+                          <Defs>
+                            <LinearGradient id="waveGrad" x1="0" y1="0" x2="0" y2="1">
+                              <Stop offset="0%" stopColor="#0284C7" stopOpacity="0.25" />
+                              <Stop offset="100%" stopColor="#0284C7" stopOpacity="0.0" />
+                            </LinearGradient>
+                          </Defs>
+                          <Path
+                            d="M0,35 Q30,10 60,30 T120,20 T170,40 T200,25 L200,65 L0,65 Z"
+                            fill="url(#waveGrad)"
+                          />
+                          <Path
+                            d="M0,35 Q30,10 60,30 T120,20 T170,40 T200,25"
+                            stroke="#0284C7"
+                            strokeWidth="2.5"
+                            fill="none"
+                          />
+                          <Path
+                            d="M0,48 Q40,55 80,45 T140,50 T200,42"
+                            stroke="#F97316"
+                            strokeWidth="2"
+                            strokeDasharray="4,4"
+                            fill="none"
+                          />
+                        </Svg>
+                      </View>
+
+                      <View style={styles.waveMonthsRow}>
+                        {['20h', '22h', '00h', '02h', '04h'].map(h => (
+                          <Text key={h} style={[styles.waveMonthText, { color: c.textSub }]}>
+                            {h}
+                          </Text>
+                        ))}
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Bottom: Progress Bars (Invoice Overview Style in Panze Studio) */}
+                  <View style={[styles.columnCard, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+                    <View style={styles.cardHeaderRow}>
+                      <Text style={[styles.cardHeading, { color: c.text }]}>Estado General de Actuaciones</Text>
+                      <SlidersHorizontal size={14} color={c.textMuted} />
+                    </View>
+
+                    {/* Progress Bar Rows */}
+                    <View style={styles.progressBarsStack}>
                       {/* Confirmados */}
-                      <View style={styles.barItem}>
-                        <View style={styles.barLabelRow}>
-                          <View style={styles.barTitleGroup}>
-                            <CheckCircle2 size={13} color={t.green} />
-                            <Text style={[styles.barTitleText, { color: t.text }]}>Confirmados</Text>
-                          </View>
-                          <Text style={[styles.barValueText, { color: t.green }]}>
-                            {confirmed} ({confirmedPct}%)
+                      <View style={styles.barBlock}>
+                        <View style={styles.barLabelGroup}>
+                          <Text style={[styles.barName, { color: c.text }]}>Confirmados</Text>
+                          <Text style={[styles.barStat, { color: c.textMuted }]}>
+                            {confirmed} | {confirmedPct}%
                           </Text>
                         </View>
-                        <View style={[styles.progressTrack, { backgroundColor: t.borderSubtle }]}>
+                        <View style={[styles.barTrack, { backgroundColor: c.innerCard }]}>
                           <View
                             style={[
-                              styles.progressFill,
-                              { backgroundColor: t.green, width: `${confirmedPct}%` },
+                              styles.barFill,
+                              { backgroundColor: '#8B5CF6', width: `${Math.max(confirmedPct, 8)}%` },
                             ]}
                           />
                         </View>
                       </View>
 
                       {/* Retrasados */}
-                      <View style={styles.barItem}>
-                        <View style={styles.barLabelRow}>
-                          <View style={styles.barTitleGroup}>
-                            <AlertCircle size={13} color={t.amber} />
-                            <Text style={[styles.barTitleText, { color: t.text }]}>Retrasados</Text>
-                          </View>
-                          <Text style={[styles.barValueText, { color: t.amber }]}>
-                            {delayed} ({delayedPct}%)
+                      <View style={styles.barBlock}>
+                        <View style={styles.barLabelGroup}>
+                          <Text style={[styles.barName, { color: c.text }]}>Retrasados</Text>
+                          <Text style={[styles.barStat, { color: c.textMuted }]}>
+                            {delayed} | {delayedPct}%
                           </Text>
                         </View>
-                        <View style={[styles.progressTrack, { backgroundColor: t.borderSubtle }]}>
+                        <View style={[styles.barTrack, { backgroundColor: c.innerCard }]}>
                           <View
                             style={[
-                              styles.progressFill,
-                              { backgroundColor: t.amber, width: `${delayedPct}%` },
+                              styles.barFill,
+                              { backgroundColor: '#EF4444', width: `${Math.max(delayedPct, 8)}%` },
                             ]}
                           />
                         </View>
                       </View>
 
                       {/* Cancelados */}
-                      <View style={styles.barItem}>
-                        <View style={styles.barLabelRow}>
-                          <View style={styles.barTitleGroup}>
-                            <XCircle size={13} color={t.red} />
-                            <Text style={[styles.barTitleText, { color: t.text }]}>Cancelados</Text>
-                          </View>
-                          <Text style={[styles.barValueText, { color: t.red }]}>
-                            {cancelled} ({cancelledPct}%)
+                      <View style={styles.barBlock}>
+                        <View style={styles.barLabelGroup}>
+                          <Text style={[styles.barName, { color: c.text }]}>Cancelados</Text>
+                          <Text style={[styles.barStat, { color: c.textMuted }]}>
+                            {cancelled} | {cancelledPct}%
                           </Text>
                         </View>
-                        <View style={[styles.progressTrack, { backgroundColor: t.borderSubtle }]}>
+                        <View style={[styles.barTrack, { backgroundColor: c.innerCard }]}>
                           <View
                             style={[
-                              styles.progressFill,
-                              { backgroundColor: t.red, width: `${cancelledPct}%` },
+                              styles.barFill,
+                              { backgroundColor: '#38BDF8', width: `${Math.max(cancelledPct, 8)}%` },
                             ]}
                           />
                         </View>
                       </View>
-                    </View>
-                  </View>
 
-                  {/* Headliner Spotlight Card */}
-                  <View style={[styles.spotlightCard, { backgroundColor: t.primary, borderColor: t.border }]}>
-                    <View style={styles.spotlightTop}>
-                      <View style={styles.spotlightBadge}>
-                        <Sparkles size={12} color={t.primaryText} />
-                        <Text style={[styles.spotlightBadgeText, { color: t.primaryText }]}>HEADLINER</Text>
+                      {/* Escenarios en marcha */}
+                      <View style={styles.barBlock}>
+                        <View style={styles.barLabelGroup}>
+                          <Text style={[styles.barName, { color: c.text }]}>Escenarios Activos</Text>
+                          <Text style={[styles.barStat, { color: c.textMuted }]}>4 | 100%</Text>
+                        </View>
+                        <View style={[styles.barTrack, { backgroundColor: c.innerCard }]}>
+                          <View style={[styles.barFill, { backgroundColor: '#10B981', width: '100%' }]} />
+                        </View>
                       </View>
-                      <Text style={[styles.spotlightTime, { color: t.primaryText }]}>
-                        {headliner ? headliner.time : '23:00'}
-                      </Text>
                     </View>
-
-                    <Text style={[styles.spotlightArtist, { color: t.primaryText }]}>
-                      {headliner ? headliner.artist : 'NEON WAVES'}
-                    </Text>
-                    <Text style={[styles.spotlightStage, { color: t.primaryText, opacity: 0.8 }]}>
-                      {headliner ? headliner.space : 'MAIN STAGE'} · Escenario Principal
-                    </Text>
-
-                    <Pressable
-                      onPress={() => {
-                        if (headliner) openEdit(headliner);
-                      }}
-                      style={[styles.spotlightBtn, { backgroundColor: t.shellBg }]}
-                    >
-                      <Text style={[styles.spotlightBtnText, { color: t.text }]}>Gestionar Actuación</Text>
-                      <ChevronRight size={14} color={t.text} />
-                    </Pressable>
                   </View>
                 </View>
 
-                {/* Column 3: Escenarios del Festival (4 active stages) */}
-                <View style={[styles.dashCard, { backgroundColor: t.card, borderColor: t.border }]}>
-                  <View style={styles.cardTopRow}>
-                    <View>
-                      <Text style={[styles.cardTitle, { color: t.text }]}>Escenarios Activos</Text>
-                      <Text style={[styles.cardSub, { color: t.textSub }]}>4 ubicaciones en directo</Text>
-                    </View>
+                {/* ---------------- COLUMN 3: Escenarios (My Meetings) & Equipo (Open Tickets) ---------------- */}
+                <View style={[styles.columnCard, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+                  {/* Top: Escenarios en Directo (My Meetings style) */}
+                  <View style={styles.cardHeaderRow}>
+                    <Text style={[styles.cardHeading, { color: c.text }]}>Escenarios Activos</Text>
+                    <Calendar size={15} color={c.textMuted} />
                   </View>
 
-                  <View style={styles.stagesStack}>
-                    {stages.map((st, i) => {
-                      const count = events.filter(e => e.space === st).length;
-                      const next = events.find(e => e.space === st);
+                  <View style={styles.meetingCardsStack}>
+                    {stages.slice(0, 3).map((st, i) => {
+                      const currentAct = events.find(e => e.space === st);
                       return (
                         <Pressable
                           key={st}
@@ -713,42 +800,75 @@ export default function App() {
                             setStageFilter(st);
                             setPage('events');
                           }}
-                          style={[styles.stageCard, { backgroundColor: t.cardElevated, borderColor: t.borderSubtle }]}
+                          style={[styles.meetingCard, { backgroundColor: c.innerCard, borderColor: c.borderSubtle }]}
                         >
-                          <View style={styles.stageCardHeader}>
-                            <View style={styles.stageTitleRow}>
-                              <View style={[styles.stageIndexBadge, { backgroundColor: t.borderSubtle }]}>
-                                <Text style={[styles.stageIndexText, { color: t.text }]}>{`0${i + 1}`}</Text>
-                              </View>
-                              <Text style={[styles.stageTitle, { color: t.text }]}>{st}</Text>
-                            </View>
-                            <View style={[styles.stageCountChip, { backgroundColor: t.borderSubtle }]}>
-                              <Text style={[styles.stageCountChipText, { color: t.text }]}>{count} acts</Text>
-                            </View>
+                          <View>
+                            <Text style={[styles.meetingTime, { color: c.textMuted }]}>
+                              {currentAct ? currentAct.time : '22:00'}
+                            </Text>
+                            <Text style={[styles.meetingTitle, { color: c.text }]}>{st}</Text>
+                            <Text style={[styles.meetingArtist, { color: c.textSub }]}>
+                              {currentAct ? currentAct.artist : 'En Preparación'}
+                            </Text>
                           </View>
-
-                          <Text style={[styles.stageNextText, { color: t.textSub }]}>
-                            {next ? `Próximo: ${next.artist} (${next.time})` : 'Sin actuaciones programadas'}
-                          </Text>
+                          <ArrowUpRight size={14} color={c.textMuted} />
                         </Pressable>
                       );
                     })}
+                  </View>
+
+                  <Pressable
+                    onPress={() => {
+                      setStageFilter('TODOS');
+                      setPage('events');
+                    }}
+                    style={styles.seeAllRow}
+                  >
+                    <Text style={[styles.seeAllText, { color: c.textMuted }]}>Ver los 4 escenarios &gt;</Text>
+                  </Pressable>
+
+                  {/* Bottom: Equipo de Operaciones (Open Tickets style in Panze Studio) */}
+                  <View style={[styles.ticketsSection, { borderTopColor: c.borderSubtle }]}>
+                    <View style={styles.cardHeaderRow}>
+                      <Text style={[styles.cardHeading, { color: c.text }]}>Equipo en Vivo</Text>
+                      <SlidersHorizontal size={14} color={c.textMuted} />
+                    </View>
+
+                    <View style={styles.ticketStaffList}>
+                      {[
+                        { name: 'Javier Navarro', role: 'Técnico Main Stage', initials: 'JN' },
+                        { name: 'Sara Morales', role: 'Coordinadora Garden', initials: 'SM' },
+                        { name: 'Raúl Giménez', role: 'Jefe Warehouse', initials: 'RG' },
+                      ].map(staff => (
+                        <View
+                          key={staff.name}
+                          style={[styles.staffRow, { backgroundColor: c.innerCard, borderColor: c.borderSubtle }]}
+                        >
+                          <View style={styles.staffAvatarCircle}>
+                            <Text style={styles.staffAvatarText}>{staff.initials}</Text>
+                          </View>
+                          <View style={styles.staffInfo}>
+                            <Text style={[styles.staffName, { color: c.text }]}>{staff.name}</Text>
+                            <Text style={[styles.staffRole, { color: c.textSub }]}>{staff.role}</Text>
+                          </View>
+                          <View style={[styles.checkPillBtn, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+                            <Text style={[styles.checkPillBtnText, { color: c.text }]}>Activo</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
                   </View>
                 </View>
               </View>
             )}
 
-            {/* ===================== PAGE: PROGRAMACIÓN (EVENTS) ===================== */}
+            {/* ===================== VIEW: PROGRAMACIÓN (EVENTS LIST) ===================== */}
             {page === 'events' && (
-              <View style={styles.eventsContainer}>
-                {/* Stage Filters Bar */}
-                <View style={[styles.filterBar, { backgroundColor: t.card, borderColor: t.border }]}>
-                  <View style={styles.filterBarLeft}>
-                    <SlidersHorizontal size={16} color={t.textMuted} />
-                    <Text style={[styles.filterBarTitle, { color: t.text }]}>Filtrar por Escenario:</Text>
-                  </View>
-
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterPillsRow}>
+              <View style={styles.eventsPageWrap}>
+                {/* Stage Filters Row */}
+                <View style={[styles.eventsFilterContainer, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+                  <Text style={[styles.filterLabel, { color: c.textMuted }]}>Escenario:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                     {['TODOS', ...stages].map(st => {
                       const active = stageFilter === st;
                       return (
@@ -756,17 +876,14 @@ export default function App() {
                           key={st}
                           onPress={() => setStageFilter(st)}
                           style={[
-                            styles.filterPillItem,
-                            {
-                              backgroundColor: active ? t.primary : t.cardElevated,
-                              borderColor: active ? t.primary : t.border,
-                            },
+                            styles.stageFilterChip,
+                            active && [styles.stageFilterChipActive, { backgroundColor: c.pillActive }],
                           ]}
                         >
                           <Text
                             style={[
-                              styles.filterPillItemText,
-                              { color: active ? t.primaryText : t.textMuted },
+                              styles.stageFilterChipText,
+                              { color: active ? c.pillActiveText : c.textMuted },
                               active && { fontWeight: '700' },
                             ]}
                           >
@@ -778,122 +895,111 @@ export default function App() {
                   </ScrollView>
                 </View>
 
-                {/* Grid of full cards */}
-                {filteredEvents.length === 0 ? (
-                  <View style={[styles.emptyContainer, { backgroundColor: t.card, borderColor: t.border }]}>
-                    <Search size={32} color={t.textSub} />
-                    <Text style={[styles.emptyTitle, { color: t.text }]}>Sin resultados</Text>
-                    <Text style={[styles.emptySubtitle, { color: t.textSub }]}>
-                      No hay eventos que coincidan con los filtros seleccionados.
-                    </Text>
-                    <Pressable
-                      onPress={() => {
-                        setSearch('');
-                        setStageFilter('TODOS');
-                      }}
-                      style={[styles.emptyResetBtn, { backgroundColor: t.primary }]}
-                    >
-                      <Text style={[styles.emptyResetBtnText, { color: t.primaryText }]}>Restablecer filtros</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  <View style={styles.eventsGrid}>
-                    {filteredEvents.map(e => {
-                      const badge = getStatusBadge(e.status);
-                      const BadgeIcon = badge.Icon;
-                      return (
-                        <View
-                          key={e.id}
-                          style={[styles.eventDetailCard, { backgroundColor: t.card, borderColor: t.border }]}
-                        >
-                          <View style={styles.eventCardTop}>
-                            <View style={[styles.timeTag, { backgroundColor: t.cardElevated, borderColor: t.border }]}>
-                              <Clock size={12} color={t.textMuted} />
-                              <Text style={[styles.timeTagText, { color: t.text }]}>{e.time}</Text>
-                            </View>
+                {/* Events Grid */}
+                <View style={styles.eventsGridContainer}>
+                  {filteredEvents.map(e => {
+                    const meta = getStageMeta(e.space);
+                    const isConfirmed = e.status === 'CONFIRMED';
+                    const isDelayed = e.status === 'DELAYED';
 
-                            <Pressable
-                              onPress={() => handleCycleStatus(e.id)}
-                              style={[
-                                styles.statusPill,
-                                { backgroundColor: badge.bg, borderColor: badge.border },
-                              ]}
-                            >
-                              <BadgeIcon size={12} color={badge.color} />
-                              <Text style={[styles.statusPillText, { color: badge.color }]}>{badge.label}</Text>
-                            </Pressable>
+                    return (
+                      <View
+                        key={e.id}
+                        style={[styles.fullEventItemCard, { backgroundColor: c.cardBg, borderColor: c.border }]}
+                      >
+                        <View style={styles.eventCardHeader}>
+                          <View style={[styles.taskSquareBadge, { backgroundColor: meta.bg }]}>
+                            <Text style={styles.taskSquareEmoji}>{meta.icon}</Text>
                           </View>
-
-                          <Text style={[styles.eventArtistTitle, { color: t.text }]}>{e.artist}</Text>
-
-                          <View style={styles.eventMetaRow}>
-                            <MapPin size={13} color={t.textSub} />
-                            <Text style={[styles.eventMetaText, { color: t.textSub }]}>
-                              {e.space} · ID: {e.id}
+                          <View style={styles.eventCardHeaderInfo}>
+                            <Text style={[styles.eventItemArtist, { color: c.text }]}>{e.artist}</Text>
+                            <Text style={[styles.eventItemStage, { color: c.textSub }]}>
+                              {e.space} · {e.time}
                             </Text>
                           </View>
 
-                          <View style={[styles.eventActionsRow, { borderTopColor: t.borderSubtle }]}>
-                            <Pressable
-                              onPress={() => openEdit(e)}
-                              style={[styles.smallBtnOutline, { borderColor: t.border, backgroundColor: t.cardElevated }]}
+                          <Pressable
+                            onPress={() => handleCycleStatus(e.id)}
+                            style={[
+                              styles.statusIndicatorBadge,
+                              isConfirmed
+                                ? { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }
+                                : isDelayed
+                                ? { backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }
+                                : { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusIndicatorText,
+                                {
+                                  color: isConfirmed ? '#16A34A' : isDelayed ? '#D97706' : '#DC2626',
+                                },
+                              ]}
                             >
-                              <Edit3 size={13} color={t.text} />
-                              <Text style={[styles.smallBtnOutlineText, { color: t.text }]}>Editar</Text>
-                            </Pressable>
-                            <Pressable
-                              onPress={() => handleCycleStatus(e.id)}
-                              style={[styles.smallBtnOutline, { borderColor: t.border, backgroundColor: t.cardElevated }]}
-                            >
-                              <RefreshCw size={13} color={t.primary} />
-                              <Text style={[styles.smallBtnOutlineText, { color: t.primary }]}>Estado</Text>
-                            </Pressable>
-                            <Pressable
-                              onPress={() => handleDelete(e.id)}
-                              style={[styles.smallBtnOutline, { borderColor: t.redBorder, backgroundColor: t.redBg }]}
-                            >
-                              <Trash2 size={13} color={t.red} />
-                              <Text style={[styles.smallBtnOutlineText, { color: t.red }]}>Eliminar</Text>
-                            </Pressable>
-                          </View>
+                              {e.status}
+                            </Text>
+                          </Pressable>
                         </View>
-                      );
-                    })}
-                  </View>
-                )}
+
+                        <View style={[styles.eventItemActions, { borderTopColor: c.borderSubtle }]}>
+                          <Pressable
+                            onPress={() => openEdit(e)}
+                            style={[styles.actionBtnPill, { backgroundColor: c.innerCard, borderColor: c.border }]}
+                          >
+                            <Edit3 size={13} color={c.text} />
+                            <Text style={[styles.actionBtnPillText, { color: c.text }]}>Editar</Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => handleCycleStatus(e.id)}
+                            style={[styles.actionBtnPill, { backgroundColor: c.innerCard, borderColor: c.border }]}
+                          >
+                            <RefreshCw size={13} color={c.text} />
+                            <Text style={[styles.actionBtnPillText, { color: c.text }]}>Estado</Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => handleDelete(e.id)}
+                            style={[styles.actionBtnPill, { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' }]}
+                          >
+                            <Trash2 size={13} color="#DC2626" />
+                            <Text style={[styles.actionBtnPillText, { color: '#DC2626' }]}>Eliminar</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
               </View>
             )}
 
-            {/* ===================== PAGE: FORM (CREAR / EDITAR) ===================== */}
+            {/* ===================== VIEW: FORM (NEW / EDIT) ===================== */}
             {page === 'form' && (
-              <View style={[styles.formContainer, { backgroundColor: t.card, borderColor: t.border }]}>
-                <View style={styles.formTopInfo}>
-                  <Text style={[styles.formMainHeading, { color: t.text }]}>
-                    {editingId ? 'Editar Concierto' : 'Crear Nuevo Concierto'}
-                  </Text>
-                  <Text style={[styles.formSubText, { color: t.textSub }]}>
-                    {editingId
-                      ? `Modificando registro ${editingId}`
-                      : 'Rellena los datos para incorporar la actuación al cartel'}
-                  </Text>
-                </View>
+              <View style={[styles.formCardWrap, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+                <Text style={[styles.formHeading, { color: c.text }]}>
+                  {editingId ? 'Editar Concierto' : 'Incorporar Concierto'}
+                </Text>
+                <Text style={[styles.formSubtitle, { color: c.textSub }]}>
+                  Completa los datos para reflejar la actuación en el cartel
+                </Text>
 
-                {/* Field: Artista */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: t.textMuted }]}>ARTISTA O GRUPO *</Text>
+                {/* Artist Name */}
+                <View style={styles.formFieldGroup}>
+                  <Text style={[styles.formLabel, { color: c.textMuted }]}>NOMBRE DEL ARTISTA</Text>
                   <TextInput
                     placeholder="Ej. DAFT PUNK"
-                    placeholderTextColor={t.textSub}
-                    style={[styles.textInput, { backgroundColor: t.inputBg, borderColor: t.inputBorder, color: t.text }]}
+                    placeholderTextColor={c.textSub}
+                    style={[styles.formInput, { backgroundColor: c.innerCard, borderColor: c.border, color: c.text }]}
                     value={formArtist}
                     onChangeText={setFormArtist}
                   />
                 </View>
 
-                {/* Field: Escenario */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: t.textMuted }]}>ESCENARIO *</Text>
-                  <View style={styles.optionsWrap}>
+                {/* Stage Selection */}
+                <View style={styles.formFieldGroup}>
+                  <Text style={[styles.formLabel, { color: c.textMuted }]}>ESCENARIO</Text>
+                  <View style={styles.stagesPillsRow}>
                     {stages.map(st => {
                       const sel = formSpace === st;
                       return (
@@ -901,18 +1007,17 @@ export default function App() {
                           key={st}
                           onPress={() => setFormSpace(st)}
                           style={[
-                            styles.optionChip,
+                            styles.stageSelectPill,
                             {
-                              backgroundColor: sel ? t.primary : t.cardElevated,
-                              borderColor: sel ? t.primary : t.border,
+                              backgroundColor: sel ? c.pillActive : c.innerCard,
+                              borderColor: sel ? c.pillActive : c.border,
                             },
                           ]}
                         >
                           <Text
                             style={[
-                              styles.optionChipText,
-                              { color: sel ? t.primaryText : t.text },
-                              sel && { fontWeight: '700' },
+                              styles.stageSelectPillText,
+                              { color: sel ? c.pillActiveText : c.text },
                             ]}
                           >
                             {st}
@@ -923,47 +1028,43 @@ export default function App() {
                   </View>
                 </View>
 
-                {/* Field: Hora */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: t.textMuted }]}>HORA PROGRAMADA (HH:MM) *</Text>
+                {/* Time */}
+                <View style={styles.formFieldGroup}>
+                  <Text style={[styles.formLabel, { color: c.textMuted }]}>HORA DE ACTUACIÓN (HH:MM)</Text>
                   <TextInput
                     placeholder="22:30"
-                    placeholderTextColor={t.textSub}
-                    style={[styles.textInput, { backgroundColor: t.inputBg, borderColor: t.inputBorder, color: t.text }]}
+                    placeholderTextColor={c.textSub}
+                    style={[styles.formInput, { backgroundColor: c.innerCard, borderColor: c.border, color: c.text }]}
                     value={formTime}
                     onChangeText={setFormTime}
                   />
                 </View>
 
-                {/* Field: Estado */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: t.textMuted }]}>ESTADO INICIAL *</Text>
-                  <View style={styles.optionsWrap}>
+                {/* Status */}
+                <View style={styles.formFieldGroup}>
+                  <Text style={[styles.formLabel, { color: c.textMuted }]}>ESTADO INICIAL</Text>
+                  <View style={styles.stagesPillsRow}>
                     {statuses.map(st => {
                       const sel = formStatus === st;
-                      const b = getStatusBadge(st);
-                      const Icon = b.Icon;
                       return (
                         <Pressable
                           key={st}
                           onPress={() => setFormStatus(st)}
                           style={[
-                            styles.optionChip,
+                            styles.stageSelectPill,
                             {
-                              backgroundColor: sel ? b.bg : t.cardElevated,
-                              borderColor: sel ? b.border : t.border,
+                              backgroundColor: sel ? c.pillActive : c.innerCard,
+                              borderColor: sel ? c.pillActive : c.border,
                             },
                           ]}
                         >
-                          <Icon size={13} color={sel ? b.color : t.textSub} />
                           <Text
                             style={[
-                              styles.optionChipText,
-                              { color: sel ? b.color : t.textMuted },
-                              sel && { fontWeight: '700' },
+                              styles.stageSelectPillText,
+                              { color: sel ? c.pillActiveText : c.text },
                             ]}
                           >
-                            {b.label}
+                            {st}
                           </Text>
                         </Pressable>
                       );
@@ -971,19 +1072,22 @@ export default function App() {
                   </View>
                 </View>
 
-                {/* Actions */}
-                <View style={styles.formBtnRow}>
-                  <Pressable accessibilityRole="button" onPress={handleSave} style={[styles.saveBtn, { backgroundColor: t.primary }]}>
-                    <Text style={[styles.saveBtnText, { color: t.primaryText }]}>
+                {/* Buttons */}
+                <View style={styles.formActionButtons}>
+                  <Pressable
+                    onPress={handleSave}
+                    style={[styles.primarySaveBtn, { backgroundColor: c.pillActive }]}
+                  >
+                    <Text style={[styles.primarySaveBtnText, { color: c.pillActiveText }]}>
                       {editingId ? 'Guardar Cambios' : 'Añadir Actuación'}
                     </Text>
                   </Pressable>
+
                   <Pressable
-                    accessibilityRole="button"
                     onPress={() => setPage('events')}
-                    style={[styles.cancelBtn, { borderColor: t.border }]}
+                    style={[styles.secondaryCancelBtn, { borderColor: c.border }]}
                   >
-                    <Text style={[styles.cancelBtnText, { color: t.textMuted }]}>Cancelar</Text>
+                    <Text style={[styles.secondaryCancelBtnText, { color: c.textMuted }]}>Cancelar</Text>
                   </Pressable>
                 </View>
               </View>
@@ -992,7 +1096,7 @@ export default function App() {
         </View>
       </View>
 
-      {/* ===================== MOBILE DRAWER NAVIGATION (MODAL OVERLAY) ===================== */}
+      {/* ===================== MOBILE DRAWER NAVIGATION ===================== */}
       {!wide && (
         <Modal
           visible={drawerOpen}
@@ -1000,58 +1104,51 @@ export default function App() {
           animationType="fade"
           onRequestClose={() => setDrawerOpen(false)}
         >
-          <View style={[styles.drawerBackdrop, { backgroundColor: t.drawerOverlay }]}>
-            <Pressable style={styles.drawerBackdropPress} onPress={() => setDrawerOpen(false)} />
+          <View style={styles.drawerOverlay}>
+            <Pressable style={styles.drawerDismiss} onPress={() => setDrawerOpen(false)} />
 
-            {/* Sliding Drawer Content */}
-            <View style={[styles.drawerPanel, { backgroundColor: t.shellBg, borderColor: t.border }]}>
-              {/* Drawer Header */}
-              <View style={[styles.drawerHeader, { borderBottomColor: t.borderSubtle }]}>
-                <View style={styles.brandGroup}>
-                  <View style={[styles.brandMark, { backgroundColor: t.primary }]}>
-                    <Radio size={14} color={t.primaryText} />
-                  </View>
-                  <View>
-                    <Text style={[styles.brandName, { color: t.text }]}>FestOps</Text>
-                    <Text style={[styles.brandTag, { color: t.textSub }]}>DRAWER NAVIGATION</Text>
-                  </View>
+            <View style={[styles.drawerContent, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+              {/* Drawer Top */}
+              <View style={[styles.drawerTopBar, { borderBottomColor: c.borderSubtle }]}>
+                <View style={styles.logoGroup}>
+                  <Text style={[styles.logoBold, { color: c.text }]}>fest</Text>
+                  <Text style={[styles.logoSub, { color: c.textMuted }]}>ops.</Text>
                 </View>
 
                 <Pressable
-                  accessibilityLabel="Cerrar menú"
                   onPress={() => setDrawerOpen(false)}
-                  style={[styles.drawerCloseBtn, { borderColor: t.border, backgroundColor: t.cardElevated }]}
+                  style={[styles.drawerCloseIcon, { backgroundColor: c.innerCard, borderColor: c.border }]}
                 >
-                  <X size={16} color={t.text} />
+                  <X size={16} color={c.text} />
                 </Pressable>
               </View>
 
-              {/* Drawer Operator Info */}
-              <View style={[styles.drawerOperatorCard, { backgroundColor: t.cardElevated, borderColor: t.borderSubtle }]}>
-                <View style={[styles.profileAvatar, { backgroundColor: t.primary }]}>
-                  <User size={14} color={t.primaryText} />
+              {/* Operator info */}
+              <View style={[styles.drawerUserBox, { backgroundColor: c.innerCard }]}>
+                <View style={styles.userAvatar}>
+                  <Text style={styles.avatarText}>OP</Text>
                 </View>
                 <View>
-                  <Text style={[styles.profileName, { color: t.text }]}>Operador ZGZ</Text>
-                  <Text style={[styles.profileRole, { color: t.textSub }]}>Live Operations · ZGZ</Text>
+                  <Text style={[styles.userName, { color: c.text }]}>Operador ZGZ</Text>
+                  <Text style={[styles.userRole, { color: c.textSub }]}>Live Operations · ZGZ</Text>
                 </View>
               </View>
 
-              {/* Drawer Nav Links */}
-              <View style={styles.drawerNavList}>
+              {/* Nav links */}
+              <View style={styles.drawerLinks}>
                 <Pressable
                   onPress={() => {
                     setPage('dashboard');
                     setDrawerOpen(false);
                   }}
                   style={[
-                    styles.drawerNavItem,
-                    page === 'dashboard' && [styles.drawerNavItemActive, { backgroundColor: t.cardElevated, borderColor: t.border }],
+                    styles.drawerLinkItem,
+                    page === 'dashboard' && [styles.drawerLinkItemActive, { backgroundColor: c.innerCard }],
                   ]}
                 >
-                  <LayoutDashboard size={18} color={page === 'dashboard' ? t.primary : t.textMuted} />
-                  <Text style={[styles.drawerNavText, { color: page === 'dashboard' ? t.text : t.textMuted }]}>
-                    Panel de Control
+                  <LayoutDashboard size={18} color={page === 'dashboard' ? c.text : c.textMuted} />
+                  <Text style={[styles.drawerLinkText, { color: page === 'dashboard' ? c.text : c.textMuted }]}>
+                    Festival Dashboard
                   </Text>
                 </Pressable>
 
@@ -1061,36 +1158,38 @@ export default function App() {
                     setDrawerOpen(false);
                   }}
                   style={[
-                    styles.drawerNavItem,
-                    page === 'events' && [styles.drawerNavItemActive, { backgroundColor: t.cardElevated, borderColor: t.border }],
+                    styles.drawerLinkItem,
+                    page === 'events' && [styles.drawerLinkItemActive, { backgroundColor: c.innerCard }],
                   ]}
                 >
-                  <Calendar size={18} color={page === 'events' ? t.primary : t.textMuted} />
-                  <Text style={[styles.drawerNavText, { color: page === 'events' ? t.text : t.textMuted }]}>
+                  <Calendar size={18} color={page === 'events' ? c.text : c.textMuted} />
+                  <Text style={[styles.drawerLinkText, { color: page === 'events' ? c.text : c.textMuted }]}>
                     Programación
                   </Text>
-                  <View style={[styles.drawerBadge, { backgroundColor: t.primary }]}>
-                    <Text style={[styles.drawerBadgeText, { color: t.primaryText }]}>{events.length}</Text>
+                  <View style={[styles.drawerBadgeCount, { backgroundColor: c.pillActive }]}>
+                    <Text style={[styles.drawerBadgeCountText, { color: c.pillActiveText }]}>
+                      {events.length}
+                    </Text>
                   </View>
                 </Pressable>
 
                 <Pressable
                   onPress={openNew}
                   style={[
-                    styles.drawerNavItem,
-                    page === 'form' && !editingId && [styles.drawerNavItemActive, { backgroundColor: t.cardElevated, borderColor: t.border }],
+                    styles.drawerLinkItem,
+                    page === 'form' && !editingId && [styles.drawerLinkItemActive, { backgroundColor: c.innerCard }],
                   ]}
                 >
-                  <PlusCircle size={18} color={page === 'form' ? t.primary : t.textMuted} />
-                  <Text style={[styles.drawerNavText, { color: page === 'form' ? t.text : t.textMuted }]}>
-                    Nuevo Concierto
+                  <Plus size={18} color={page === 'form' ? c.text : c.textMuted} />
+                  <Text style={[styles.drawerLinkText, { color: page === 'form' ? c.text : c.textMuted }]}>
+                    Nueva Actuación
                   </Text>
                 </Pressable>
               </View>
 
-              {/* Drawer Stage Shortcuts */}
-              <View style={styles.drawerSection}>
-                <Text style={[styles.drawerSectionTitle, { color: t.textSub }]}>ESCENARIOS</Text>
+              {/* Drawer Stages List */}
+              <View style={styles.drawerStagesSection}>
+                <Text style={[styles.drawerSectionHeading, { color: c.textSub }]}>ESCENARIOS</Text>
                 {stages.map(st => (
                   <Pressable
                     key={st}
@@ -1099,36 +1198,36 @@ export default function App() {
                       setPage('events');
                       setDrawerOpen(false);
                     }}
-                    style={styles.drawerStageRow}
+                    style={styles.drawerStageRowItem}
                   >
-                    <MapPin size={13} color={t.textSub} />
-                    <Text style={[styles.drawerStageName, { color: t.text }]}>{st}</Text>
+                    <MapPin size={13} color={c.textSub} />
+                    <Text style={[styles.drawerStageRowText, { color: c.text }]}>{st}</Text>
                   </Pressable>
                 ))}
               </View>
 
-              {/* Drawer Footer: Theme Toggle & API Config */}
-              <View style={[styles.drawerFooter, { borderTopColor: t.borderSubtle }]}>
+              {/* Drawer Bottom Actions */}
+              <View style={[styles.drawerBottomActions, { borderTopColor: c.borderSubtle }]}>
                 <Pressable
                   onPress={() => {
                     setDrawerOpen(false);
                     setApiModalOpen(true);
                   }}
-                  style={[styles.drawerThemeBtn, { backgroundColor: t.cardElevated, borderColor: t.border, marginBottom: 8 }]}
+                  style={[styles.drawerBtnAction, { backgroundColor: c.innerCard, borderColor: c.border }]}
                 >
-                  <Database size={16} color={backendSource === 'dynamodb' ? t.green : t.text} />
-                  <Text style={[styles.drawerThemeText, { color: t.text }]}>
+                  <Database size={15} color={backendSource === 'dynamodb' ? '#16A34A' : c.text} />
+                  <Text style={[styles.drawerBtnActionText, { color: c.text }]}>
                     {backendSource === 'dynamodb' ? 'DynamoDB Conectado' : 'Conectar DynamoDB'}
                   </Text>
                 </Pressable>
 
                 <Pressable
-                  onPress={toggleTheme}
-                  style={[styles.drawerThemeBtn, { backgroundColor: t.cardElevated, borderColor: t.border }]}
+                  onPress={() => setIsDark(!isDark)}
+                  style={[styles.drawerBtnAction, { backgroundColor: c.innerCard, borderColor: c.border }]}
                 >
-                  {themeMode === 'dark' ? <Sun size={16} color={t.text} /> : <Moon size={16} color={t.text} />}
-                  <Text style={[styles.drawerThemeText, { color: t.text }]}>
-                    {themeMode === 'dark' ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro'}
+                  {isDark ? <Sun size={15} color={c.text} /> : <Moon size={15} color={c.text} />}
+                  <Text style={[styles.drawerBtnActionText, { color: c.text }]}>
+                    {isDark ? 'Modo Claro' : 'Modo Oscuro'}
                   </Text>
                 </Pressable>
               </View>
@@ -1144,49 +1243,48 @@ export default function App() {
         animationType="fade"
         onRequestClose={() => setApiModalOpen(false)}
       >
-        <View style={[styles.drawerBackdrop, { backgroundColor: t.drawerOverlay, justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
-          <Pressable style={styles.drawerBackdropPress} onPress={() => setApiModalOpen(false)} />
-          <View style={[styles.apiModalCard, { backgroundColor: t.shellBg, borderColor: t.border }]}>
-            <View style={styles.apiModalHeader}>
-              <View style={styles.apiModalTitleRow}>
-                <Database size={18} color={t.primary} />
-                <Text style={[styles.apiModalTitle, { color: t.text }]}>Conexión con Amazon DynamoDB</Text>
+        <View style={styles.modalBackdrop}>
+          <Pressable style={styles.modalDismiss} onPress={() => setApiModalOpen(false)} />
+          <View style={[styles.modalCard, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+            <View style={styles.modalHeaderRow}>
+              <View style={styles.modalTitleGroup}>
+                <Database size={18} color={c.text} />
+                <Text style={[styles.modalTitle, { color: c.text }]}>Conexión con Amazon DynamoDB</Text>
               </View>
               <Pressable onPress={() => setApiModalOpen(false)}>
-                <X size={18} color={t.textSub} />
+                <X size={18} color={c.textSub} />
               </Pressable>
             </View>
 
-            <Text style={[styles.apiModalText, { color: t.textSub }]}>
-              Pega la URL de tu API Gateway desplegada con la plantilla de backend (`template.yaml`). Si dejas el campo vacío, la app funcionará en modo local en memoria.
+            <Text style={[styles.modalDesc, { color: c.textMuted }]}>
+              Pega la URL de tu API Gateway desplegada con la plantilla de backend (`backend/template.yaml`).
             </Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: t.textMuted }]}>URL DE API GATEWAY (HTTP API)</Text>
+            <View style={styles.formFieldGroup}>
+              <Text style={[styles.formLabel, { color: c.textMuted }]}>URL DE API GATEWAY</Text>
               <TextInput
                 placeholder="https://xxxx.execute-api.us-east-1.amazonaws.com"
-                placeholderTextColor={t.textSub}
-                style={[styles.textInput, { backgroundColor: t.inputBg, borderColor: t.inputBorder, color: t.text }]}
+                placeholderTextColor={c.textSub}
+                style={[styles.formInput, { backgroundColor: c.innerCard, borderColor: c.border, color: c.text }]}
                 value={apiUrlInput}
                 onChangeText={setApiUrlInput}
                 autoCapitalize="none"
               />
             </View>
 
-            <View style={styles.apiModalStatusRow}>
+            <View style={styles.modalStatusChipRow}>
               <View
                 style={[
-                  styles.statusPill,
-                  {
-                    backgroundColor: backendSource === 'dynamodb' ? t.greenBg : t.cardElevated,
-                    borderColor: backendSource === 'dynamodb' ? t.greenBorder : t.border,
-                  },
+                  styles.statusIndicatorBadge,
+                  backendSource === 'dynamodb'
+                    ? { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }
+                    : { backgroundColor: c.innerCard, borderColor: c.border },
                 ]}
               >
                 <Text
                   style={[
-                    styles.statusPillText,
-                    { color: backendSource === 'dynamodb' ? t.green : t.textMuted },
+                    styles.statusIndicatorText,
+                    { color: backendSource === 'dynamodb' ? '#16A34A' : c.textMuted },
                   ]}
                 >
                   Estado: {backendSource === 'dynamodb' ? 'Conectado a DynamoDB' : 'Almacén Local'}
@@ -1194,12 +1292,12 @@ export default function App() {
               </View>
             </View>
 
-            <View style={styles.formBtnRow}>
-              <Pressable onPress={handleConnectApi} style={[styles.saveBtn, { backgroundColor: t.primary }]}>
-                <Text style={[styles.saveBtnText, { color: t.primaryText }]}>Guardar y Sincronizar</Text>
+            <View style={styles.formActionButtons}>
+              <Pressable onPress={handleConnectApi} style={[styles.primarySaveBtn, { backgroundColor: c.pillActive }]}>
+                <Text style={[styles.primarySaveBtnText, { color: c.pillActiveText }]}>Guardar y Sincronizar</Text>
               </Pressable>
-              <Pressable onPress={() => setApiModalOpen(false)} style={[styles.cancelBtn, { borderColor: t.border }]}>
-                <Text style={[styles.cancelBtnText, { color: t.textMuted }]}>Cerrar</Text>
+              <Pressable onPress={() => setApiModalOpen(false)} style={[styles.secondaryCancelBtn, { borderColor: c.border }]}>
+                <Text style={[styles.secondaryCancelBtnText, { color: c.textMuted }]}>Cerrar</Text>
               </Pressable>
             </View>
           </View>
@@ -1210,864 +1308,844 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  viewport: {
+  safeArea: {
     flex: 1,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 36 : 12,
   },
-  shell: {
+  outerShell: {
     flex: 1,
-    margin: 0,
+    marginHorizontal: Platform.OS === 'web' ? 18 : 6,
+    marginVertical: Platform.OS === 'web' ? 14 : 4,
+    borderRadius: Platform.OS === 'web' ? 28 : 20,
+    borderWidth: 1,
     overflow: 'hidden',
   },
 
   // Global Header
-  globalHeader: {
+  topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    gap: 16,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
   },
-  hamburgerBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandGroup: {
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  brandMark: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+  mobileMenuBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  brandName: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  brandTag: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  headerCenter: {
-    flex: 1,
-    maxWidth: 550,
-  },
-  headerPills: {
+  logoGroup: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'baseline',
   },
-  headerPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+  logoBold: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+  },
+  logoSub: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Segmented Container (Center of Header in Panze Studio)
+  segmentedContainer: {
+    flexDirection: 'row',
+    borderRadius: 22,
     borderWidth: 1,
+    padding: 3,
+    gap: 4,
   },
-  headerPillText: {
+  segmentPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 18,
+  },
+  segmentPillActive: {
+    elevation: 2,
+  },
+  segmentPillText: {
     fontSize: 11,
     fontWeight: '600',
   },
-  headerRight: {
+
+  // Utilities
+  utilitiesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
-  dbChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  dbChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  iconBtn: {
+  headerActionCircle: {
     width: 36,
     height: 36,
-    borderRadius: 8,
+    borderRadius: 18,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
-  profileChip: {
+  unreadDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
+  },
+  userProfileChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
+    gap: 8,
+    marginLeft: 6,
   },
-  profileAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
+  userAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileName: {
-    fontSize: 12,
-    fontWeight: '700',
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
-  profileRole: {
+  userName: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  userRole: {
     fontSize: 10,
     fontWeight: '500',
   },
 
-  // Shell Body
-  shellBody: {
+  // Body Layout
+  bodyLayout: {
     flex: 1,
     flexDirection: 'row',
   },
 
-  // Desktop Left Rail
-  leftRail: {
-    width: 72,
+  // Left Icon Rail
+  iconRail: {
+    width: 68,
     borderRightWidth: 1,
     paddingVertical: 20,
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  railNavGroup: {
+  railTopGroup: {
     gap: 14,
     alignItems: 'center',
   },
-  railBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+  railIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
   },
-  railBtnActive: {
-    borderWidth: 1,
-    borderColor: 'transparent',
+  railIconCircleActive: {
+    elevation: 4,
   },
-  railTooltip: {
-    fontSize: 9,
-    fontWeight: '600',
-    marginTop: 3,
-  },
-  railBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  railBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  railFooter: {
+  railBottomGroup: {
     alignItems: 'center',
   },
 
-  // Workspace Scroll
+  // Workspace Scroll Area
   workspaceScroll: {
     flex: 1,
   },
-  workspaceContainer: {
-    padding: 24,
+  workspaceContent: {
+    padding: 22,
     paddingBottom: 60,
     gap: 20,
   },
-  feedbackBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  feedbackText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  titleSection: {
+
+  // Sub Header
+  subHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
     gap: 16,
   },
-  kickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  subHeaderKicker: {
+    fontSize: 12,
+    fontWeight: '500',
   },
-  kickerText: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-  },
-  h1Text: {
-    fontSize: 24,
+  subHeaderTitle: {
+    fontSize: 28,
     fontWeight: '900',
-    letterSpacing: -0.5,
-    marginTop: 4,
+    letterSpacing: -0.8,
+    marginTop: 2,
   },
-  searchBox: {
+  searchPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
     borderWidth: 1,
-    minWidth: 260,
+    minWidth: 280,
   },
-  searchInput: {
+  searchPillInput: {
     flex: 1,
     fontSize: 12,
     padding: 0,
   },
+  feedbackChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  feedbackChipText: {
+    color: '#16A34A',
+    fontSize: 12,
+    fontWeight: '600',
+  },
 
   // Dashboard 3-Column Grid
   dashboardGrid: {
+    flexDirection: 'column',
+    gap: 18,
+  },
+  dashboardGridDesktop: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 20,
+    alignItems: 'flex-start',
   },
-  dashCard: {
+  columnCard: {
     flex: 1,
-    minWidth: 280,
-    borderRadius: 14,
+    borderRadius: 20,
     borderWidth: 1,
-    padding: 20,
-    gap: 16,
+    padding: 18,
+    gap: 14,
   },
-  dashColMiddle: {
-    flex: 1,
-    minWidth: 280,
-    gap: 20,
+  centerColGroup: {
+    flex: 2,
+    gap: 18,
   },
-  cardTopRow: {
+  middleSplitRow: {
+    flexDirection: 'column',
+    gap: 18,
+  },
+  middleSplitRowDesktop: {
+    flexDirection: 'row',
+  },
+
+  // Card Header Common
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  cardTitle: {
+  cardHeading: {
     fontSize: 15,
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
-  cardSub: {
-    fontSize: 11,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  smallActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  smallActionBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Live Feed
-  feedList: {
-    gap: 10,
-  },
-  feedRow: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 12,
-    gap: 8,
-  },
-  feedRowMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  timeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  timeBoxText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  artistInfo: {
-    flex: 1,
-  },
-  artistName: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  stageLocationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 2,
-  },
-  stageLocationText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  statusPillText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
-  rowActions: {
-    flexDirection: 'row',
-    gap: 14,
-    borderTopWidth: 1,
-    paddingTop: 8,
-  },
-  actionLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  actionLinkText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  viewAllFooter: {
-    alignItems: 'center',
-    paddingTop: 4,
-  },
-  viewAllText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Progress Bars (Middle Col)
-  metricCountBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  metricCountText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  barsGroup: {
-    gap: 14,
-  },
-  barItem: {
-    gap: 6,
-  },
-  barLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  barTitleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  barTitleText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  barValueText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-
-  // Spotlight Card
-  spotlightCard: {
+  plusCircleBtn: {
+    width: 28,
+    height: 28,
     borderRadius: 14,
     borderWidth: 1,
-    padding: 20,
-    gap: 10,
-  },
-  spotlightTop: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
-  spotlightBadge: {
+
+  // Tasks Filter
+  tasksFilterRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    gap: 8,
   },
-  spotlightBadgeText: {
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
+  taskFilterPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'transparent',
   },
-  spotlightTime: {
-    fontSize: 13,
-    fontWeight: '800',
+  taskFilterPillActive: {},
+  taskFilterPillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
-  spotlightArtist: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  spotlightStage: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  spotlightBtn: {
+
+  // Ongoing Badge
+  ongoingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 6,
+    borderRadius: 12,
   },
-  spotlightBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Stages Stack
-  stagesStack: {
-    gap: 10,
-  },
-  stageCard: {
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 6,
-  },
-  stageCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  stageTitleRow: {
+  ongoingLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  stageIndexBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 5,
+  ongoingCountCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stageIndexText: {
+  ongoingCountText: {
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '900',
   },
-  stageTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  stageCountChip: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  stageCountChipText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  stageNextText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-
-  // Programación (Events view)
-  eventsContainer: {
-    gap: 16,
-  },
-  filterBar: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    flexWrap: 'wrap',
-  },
-  filterBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  filterBarTitle: {
+  ongoingText: {
     fontSize: 12,
     fontWeight: '700',
   },
-  filterPillsRow: {
+
+  // Task Cards List
+  taskCardsList: {
+    gap: 10,
+  },
+  taskCard: {
     flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
+  },
+  taskSquareBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskSquareEmoji: {
+    fontSize: 16,
+  },
+  taskCardBody: {
+    flex: 1,
+  },
+  taskArtistName: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  taskStageTime: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  taskCheckCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskCheckConfirmed: {
+    borderColor: '#16A34A',
+    backgroundColor: '#DCFCE7',
+  },
+  taskCheckDelayed: {
+    borderColor: '#F97316',
+    backgroundColor: '#FFEDD5',
+  },
+  viewMoreRow: {
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  viewMoreText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Donut Chart
+  donutCenterWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  donutLegendRow: {
+    gap: 6,
+    marginTop: 6,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
-  filterPillItem: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  filterPillItemText: {
+  legendText: {
     fontSize: 11,
     fontWeight: '600',
   },
-  eventsGrid: {
+
+  // Wave Chart
+  waveLegendInfo: {
+    gap: 2,
+    marginBottom: 4,
+  },
+  waveSvgWrap: {
+    height: 65,
+    overflow: 'hidden',
+  },
+  waveMonthsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
+    justifyContent: 'space-between',
+    paddingTop: 4,
   },
-  eventDetailCard: {
-    flex: 1,
-    minWidth: 280,
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 16,
-    gap: 10,
+  waveMonthText: {
+    fontSize: 9,
+    fontWeight: '600',
   },
-  eventCardTop: {
+
+  // Progress Bars (Invoice Overview)
+  progressBarsStack: {
+    gap: 12,
+  },
+  barBlock: {
+    gap: 6,
+  },
+  barLabelGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  timeTag: {
+  barName: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  barStat: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  barTrack: {
+    height: 10,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 5,
+  },
+
+  // Meetings Column
+  meetingCardsStack: {
+    gap: 10,
+  },
+  meetingCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  timeTagText: {
-    fontSize: 12,
+  meetingTime: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  meetingTitle: {
+    fontSize: 13,
     fontWeight: '800',
+    marginTop: 2,
   },
-  eventArtistTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  eventMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  eventMetaText: {
+  meetingArtist: {
     fontSize: 11,
     fontWeight: '500',
   },
-  eventActionsRow: {
+  seeAllRow: {
+    paddingVertical: 2,
+  },
+  seeAllText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Tickets / Staff Section
+  ticketsSection: {
+    borderTopWidth: 1,
+    paddingTop: 14,
+    gap: 10,
+  },
+  ticketStaffList: {
+    gap: 8,
+  },
+  staffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 10,
+  },
+  staffAvatarCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  staffAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  staffInfo: {
+    flex: 1,
+  },
+  staffName: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  staffRole: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  checkPillBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  checkPillBtnText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+
+  // Events Full View
+  eventsPageWrap: {
+    gap: 16,
+  },
+  eventsFilterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stageFilterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+  },
+  stageFilterChipActive: {},
+  stageFilterChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  eventsGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+  },
+  fullEventItemCard: {
+    flex: 1,
+    minWidth: 280,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+  },
+  eventCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  eventCardHeaderInfo: {
+    flex: 1,
+  },
+  eventItemArtist: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  eventItemStage: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  statusIndicatorBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  statusIndicatorText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  eventItemActions: {
     flexDirection: 'row',
     gap: 8,
     borderTopWidth: 1,
     paddingTop: 10,
   },
-  smallBtnOutline: {
+  actionBtnPill: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
   },
-  smallBtnOutlineText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  emptyContainer: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 40,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  emptySubtitle: {
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  emptyResetBtn: {
-    marginTop: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  emptyResetBtnText: {
+  actionBtnPillText: {
     fontSize: 11,
     fontWeight: '700',
   },
 
   // Form View
-  formContainer: {
-    maxWidth: 620,
+  formCardWrap: {
+    maxWidth: 580,
     width: '100%',
-    borderRadius: 14,
+    alignSelf: 'center',
+    borderRadius: 20,
     borderWidth: 1,
     padding: 24,
     gap: 18,
-    alignSelf: 'center',
   },
-  formTopInfo: {
-    gap: 4,
-  },
-  formMainHeading: {
-    fontSize: 18,
+  formHeading: {
+    fontSize: 20,
     fontWeight: '900',
   },
-  formSubText: {
+  formSubtitle: {
     fontSize: 12,
+    marginTop: -10,
   },
-  inputGroup: {
+  formFieldGroup: {
     gap: 6,
   },
-  inputLabel: {
+  formLabel: {
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.8,
   },
-  textInput: {
-    borderRadius: 8,
+  formInput: {
+    borderRadius: 10,
     borderWidth: 1,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 13,
   },
-  optionsWrap: {
+  stagesPillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  optionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  stageSelectPill: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 7,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  optionChipText: {
+  stageSelectPillText: {
     fontSize: 11,
     fontWeight: '600',
   },
-  formBtnRow: {
+  formActionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     marginTop: 8,
   },
-  saveBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
+  primarySaveBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: 20,
   },
-  saveBtnText: {
+  primarySaveBtnText: {
     fontSize: 12,
     fontWeight: '800',
   },
-  cancelBtn: {
+  secondaryCancelBtn: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 11,
+    borderRadius: 20,
     borderWidth: 1,
   },
-  cancelBtnText: {
+  secondaryCancelBtnText: {
     fontSize: 12,
     fontWeight: '600',
   },
 
-  // Drawer Navigation (Mobile Overlay)
-  drawerBackdrop: {
+  // Mobile Drawer Navigation
+  drawerOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     flexDirection: 'row',
   },
-  drawerBackdropPress: {
+  drawerDismiss: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
   },
-  drawerPanel: {
-    width: 290,
+  drawerContent: {
+    width: 285,
     height: '100%',
     borderRightWidth: 1,
     padding: 20,
-    gap: 16,
-    elevation: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowOffset: { width: 4, height: 0 },
+    gap: 14,
   },
-  drawerHeader: {
+  drawerTopBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 14,
+    paddingBottom: 12,
     borderBottomWidth: 1,
   },
-  drawerCloseBtn: {
+  drawerCloseIcon: {
     width: 32,
     height: 32,
-    borderRadius: 6,
+    borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  drawerOperatorCard: {
+  drawerUserBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 12,
   },
-  drawerNavList: {
-    gap: 6,
+  drawerLinks: {
+    gap: 4,
   },
-  drawerNavItem: {
+  drawerLinkItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  drawerNavItemActive: {
-    borderWidth: 1,
-  },
-  drawerNavText: {
+  drawerLinkItemActive: {},
+  drawerLinkText: {
     fontSize: 13,
     fontWeight: '700',
     flex: 1,
   },
-  drawerBadge: {
+  drawerBadgeCount: {
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: 8,
   },
-  drawerBadgeText: {
+  drawerBadgeCountText: {
     fontSize: 10,
     fontWeight: '800',
   },
-  drawerSection: {
-    gap: 8,
+  drawerStagesSection: {
+    gap: 6,
     paddingTop: 8,
   },
-  drawerSectionTitle: {
+  drawerSectionHeading: {
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1,
   },
-  drawerStageRow: {
+  drawerStageRowItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingVertical: 6,
-    paddingHorizontal: 4,
   },
-  drawerStageName: {
+  drawerStageRowText: {
     fontSize: 12,
     fontWeight: '600',
   },
-  drawerFooter: {
+  drawerBottomActions: {
     marginTop: 'auto',
-    paddingTop: 14,
+    paddingTop: 12,
     borderTopWidth: 1,
+    gap: 8,
   },
-  drawerThemeBtn: {
+  drawerBtnAction: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 9,
+    borderRadius: 10,
     borderWidth: 1,
   },
-  drawerThemeText: {
-    fontSize: 12,
+  drawerBtnActionText: {
+    fontSize: 11,
     fontWeight: '700',
   },
 
-  // API Configuration Modal
-  apiModalCard: {
-    width: '100%',
-    maxWidth: 500,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 24,
-    gap: 16,
+  // Modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  apiModalHeader: {
+  modalDismiss: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 480,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 22,
+    gap: 14,
+  },
+  modalHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  apiModalTitleRow: {
+  modalTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  apiModalTitle: {
-    fontSize: 16,
+  modalTitle: {
+    fontSize: 15,
     fontWeight: '800',
   },
-  apiModalText: {
+  modalDesc: {
     fontSize: 12,
     lineHeight: 18,
   },
-  apiModalStatusRow: {
+  modalStatusChipRow: {
     flexDirection: 'row',
   },
 });
