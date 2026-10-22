@@ -3,9 +3,10 @@ export type ThemeMode = 'dark' | 'light';
 export interface ThemeColors {
   mode: ThemeMode;
   bg: string;
-  sidebarBg: string;
+  shellBg: string;
   card: string;
   cardElevated: string;
+  cardHover: string;
   border: string;
   borderSubtle: string;
   text: string;
@@ -13,111 +14,82 @@ export interface ThemeColors {
   textSub: string;
   primary: string;
   primaryText: string;
-  heroBg: string;
-  heroBorder: string;
-  heroText: string;
-  heroSub: string;
-  statGreenBg: string;
-  statGreenBorder: string;
-  statGreenText: string;
-  statAmberBg: string;
-  statAmberBorder: string;
-  statAmberText: string;
-  statBlueBg: string;
-  statBlueBorder: string;
-  statBlueText: string;
-  statRedBg: string;
-  statRedBorder: string;
-  statRedText: string;
+  accent: string;
   inputBg: string;
   inputBorder: string;
-  badgeBg: string;
-  actionBg: string;
-  actionHover: string;
+  green: string;
+  greenBg: string;
+  greenBorder: string;
+  amber: string;
+  amberBg: string;
+  amberBorder: string;
+  red: string;
+  redBg: string;
+  redBorder: string;
+  railBg: string;
+  railActive: string;
+  drawerOverlay: string;
 }
 
 export const themes: Record<ThemeMode, ThemeColors> = {
   dark: {
     mode: 'dark',
-    bg: '#0F1216',
-    sidebarBg: '#171A21',
-    card: '#1B1F27',
-    cardElevated: '#222732',
-    border: '#292F3D',
-    borderSubtle: '#222733',
-    text: '#FFFFFF',
+    bg: '#080B11',
+    shellBg: '#0F141F',
+    card: '#151B28',
+    cardElevated: '#1B2232',
+    cardHover: '#20293C',
+    border: '#232B3E',
+    borderSubtle: '#1C2333',
+    text: '#F8FAFC',
     textMuted: '#94A3B8',
     textSub: '#64748B',
     primary: '#38BDF8',
-    primaryText: '#0F172A',
-    heroBg: '#161922',
-    heroBorder: '#282F3F',
-    heroText: '#FFFFFF',
-    heroSub: '#94A3B8',
-    statGreenBg: '#112922',
-    statGreenBorder: '#1A4D3B',
-    statGreenText: '#34D399',
-    statAmberBg: '#302213',
-    statAmberBorder: '#563B1C',
-    statAmberText: '#FBBF24',
-    statBlueBg: '#13233A',
-    statBlueBorder: '#1F3C64',
-    statBlueText: '#60A5FA',
-    statRedBg: '#32161A',
-    statRedBorder: '#5C222A',
-    statRedText: '#F87171',
-    inputBg: '#14171F',
-    inputBorder: '#2C3342',
-    badgeBg: '#222834',
-    actionBg: '#232936',
-    actionHover: '#2B3242',
+    primaryText: '#080B11',
+    accent: '#38BDF8',
+    inputBg: '#111622',
+    inputBorder: '#232B3E',
+    green: '#10B981',
+    greenBg: 'rgba(16, 185, 129, 0.12)',
+    greenBorder: 'rgba(16, 185, 129, 0.28)',
+    amber: '#F59E0B',
+    amberBg: 'rgba(245, 158, 11, 0.12)',
+    amberBorder: 'rgba(245, 158, 11, 0.28)',
+    red: '#EF4444',
+    redBg: 'rgba(239, 68, 68, 0.12)',
+    redBorder: 'rgba(239, 68, 68, 0.28)',
+    railBg: '#0D111A',
+    railActive: '#1B2232',
+    drawerOverlay: 'rgba(0, 0, 0, 0.72)',
   },
   light: {
     mode: 'light',
-    bg: '#F3F4F7',
-    sidebarBg: '#FFFFFF',
+    bg: '#EDF1F7',
+    shellBg: '#FFFFFF',
     card: '#FFFFFF',
-    cardElevated: '#F9FAFB',
-    border: '#E5E7EB',
-    borderSubtle: '#F1F3F5',
-    text: '#111827',
-    textMuted: '#6B7280',
-    textSub: '#9CA3AF',
+    cardElevated: '#F8FAFC',
+    cardHover: '#F1F5F9',
+    border: '#E2E8F0',
+    borderSubtle: '#F1F5F9',
+    text: '#0F172A',
+    textMuted: '#64748B',
+    textSub: '#94A3B8',
     primary: '#0F172A',
     primaryText: '#FFFFFF',
-    heroBg: '#111827',
-    heroBorder: '#1F2937',
-    heroText: '#FFFFFF',
-    heroSub: '#9CA3AF',
-    statGreenBg: '#E8F8F0',
-    statGreenBorder: '#C4EED8',
-    statGreenText: '#059669',
-    statAmberBg: '#FEF3EC',
-    statAmberBorder: '#FCD9BD',
-    statAmberText: '#D97706',
-    statBlueBg: '#EFF4FE',
-    statBlueBorder: '#D3E1FC',
-    statBlueText: '#2563EB',
-    statRedBg: '#FEF2F2',
-    statRedBorder: '#FECACA',
-    statRedText: '#DC2626',
-    inputBg: '#F9FAFB',
-    inputBorder: '#E5E7EB',
-    badgeBg: '#F1F3F7',
-    actionBg: '#F3F4F6',
-    actionHover: '#E5E7EB',
+    accent: '#2563EB',
+    inputBg: '#F8FAFC',
+    inputBorder: '#E2E8F0',
+    green: '#059669',
+    greenBg: '#ECFDF5',
+    greenBorder: '#A7F3D0',
+    amber: '#D97706',
+    amberBg: '#FFFBEB',
+    amberBorder: '#FDE68A',
+    red: '#DC2626',
+    redBg: '#FEF2F2',
+    redBorder: '#FECACA',
+    railBg: '#F8FAFC',
+    railActive: '#E2E8F0',
+    drawerOverlay: 'rgba(15, 23, 42, 0.45)',
   },
 };
-
-// Legacy fallback
-export const theme = {
-  background: '#090909',
-  card: '#151515',
-  border: '#292929',
-  pink: '#FF2F92',
-  white: '#FFFFFF',
-  muted: '#9B9B9B',
-  green: '#39D98A',
-  amber: '#F5C542',
-  red: '#FF6375',
-} as const;

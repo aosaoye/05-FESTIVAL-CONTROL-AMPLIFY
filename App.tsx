@@ -8,7 +8,31 @@ import {
   Pressable,
   StyleSheet,
   useWindowDimensions,
+  Modal,
 } from 'react-native';
+import {
+  LayoutDashboard,
+  Calendar,
+  PlusCircle,
+  Menu,
+  X,
+  Search,
+  Moon,
+  Sun,
+  Clock,
+  MapPin,
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  Trash2,
+  Edit3,
+  RefreshCw,
+  User,
+  Radio,
+  SlidersHorizontal,
+  ChevronRight,
+  Sparkles,
+} from 'lucide-react-native';
 import { initialEvents, FestivalEvent, EventStatus } from './src/data';
 import { themes, ThemeMode, ThemeColors } from './src/theme';
 
@@ -18,11 +42,12 @@ const statuses: EventStatus[] = ['CONFIRMED', 'DELAYED', 'CANCELLED'];
 
 export default function App() {
   const { width } = useWindowDimensions();
-  const wide = width > 960;
+  const wide = width >= 920;
 
-  // App State
-  const [themeMode, setThemeMode] = useState<ThemeMode>('dark');
+  // State
+  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
   const [page, setPage] = useState<Page>('dashboard');
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [events, setEvents] = useState<FestivalEvent[]>(initialEvents);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('TODOS');
@@ -31,58 +56,68 @@ export default function App() {
   // Form Fields
   const [formArtist, setFormArtist] = useState('');
   const [formSpace, setFormSpace] = useState<string>(stages[0]);
-  const [formTime, setFormTime] = useState('21:45');
+  const [formTime, setFormTime] = useState('22:00');
   const [formStatus, setFormStatus] = useState<EventStatus>('CONFIRMED');
-  const [notice, setNotice] = useState('');
+  const [feedback, setFeedback] = useState('');
 
   const t: ThemeColors = themes[themeMode];
 
-  // Stats
+  // Metrics
+  const total = events.length;
   const confirmed = useMemo(() => events.filter(e => e.status === 'CONFIRMED').length, [events]);
   const delayed = useMemo(() => events.filter(e => e.status === 'DELAYED').length, [events]);
   const cancelled = useMemo(() => events.filter(e => e.status === 'CANCELLED').length, [events]);
 
-  // Next upcoming event for Hero card
-  const nextEvent = useMemo(() => events.find(e => e.status === 'CONFIRMED') || events[0], [events]);
+  const confirmedPct = total > 0 ? Math.round((confirmed / total) * 100) : 0;
+  const delayedPct = total > 0 ? Math.round((delayed / total) * 100) : 0;
+  const cancelledPct = total > 0 ? Math.round((cancelled / total) * 100) : 0;
 
-  // Filtered events
+  // Next headliner or confirmed act
+  const headliner = useMemo(
+    () => events.find(e => e.space === 'MAIN STAGE' && e.status === 'CONFIRMED') || events[0],
+    [events]
+  );
+
+  // Filtered Events
   const filteredEvents = useMemo(() => {
     return events.filter(e => {
       const matchStage = stageFilter === 'TODOS' || e.space === stageFilter;
-      const query = search.trim().toLowerCase();
+      const q = search.trim().toLowerCase();
       const matchSearch =
-        !query ||
-        e.artist.toLowerCase().includes(query) ||
-        e.id.toLowerCase().includes(query) ||
-        e.space.toLowerCase().includes(query);
+        !q ||
+        e.artist.toLowerCase().includes(q) ||
+        e.id.toLowerCase().includes(q) ||
+        e.space.toLowerCase().includes(q);
       return matchStage && matchSearch;
     });
   }, [events, search, stageFilter]);
 
-  // Handlers
+  // Actions
   const openNew = () => {
     setEditingId(null);
     setFormArtist('');
     setFormSpace(stages[0]);
-    setFormTime('21:45');
+    setFormTime('22:00');
     setFormStatus('CONFIRMED');
-    setNotice('');
+    setFeedback('');
     setPage('form');
+    setDrawerOpen(false);
   };
 
-  const openEdit = (item: FestivalEvent) => {
-    setEditingId(item.id);
-    setFormArtist(item.artist);
-    setFormSpace(item.space);
-    setFormTime(item.time);
-    setFormStatus(item.status);
-    setNotice('');
+  const openEdit = (e: FestivalEvent) => {
+    setEditingId(e.id);
+    setFormArtist(e.artist);
+    setFormSpace(e.space);
+    setFormTime(e.time);
+    setFormStatus(e.status);
+    setFeedback('');
     setPage('form');
+    setDrawerOpen(false);
   };
 
   const handleSave = () => {
     if (!formArtist.trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(formTime)) {
-      setNotice('Introduce un nombre de artista y hora válida (HH:MM).');
+      setFeedback('Introduce el nombre del artista y una hora válida (HH:MM).');
       return;
     }
 
@@ -100,7 +135,7 @@ export default function App() {
             : e
         )
       );
-      setNotice(`"${formArtist.trim().toUpperCase()}" actualizado.`);
+      setFeedback(`Actuación "${formArtist.trim().toUpperCase()}" actualizada.`);
     } else {
       const newId = 'EVT-' + Math.floor(100 + Math.random() * 900);
       setEvents(prev => [
@@ -113,7 +148,7 @@ export default function App() {
         },
         ...prev,
       ]);
-      setNotice(`"${formArtist.trim().toUpperCase()}" añadido.`);
+      setFeedback(`"${formArtist.trim().toUpperCase()}" añadida a la programación.`);
     }
     setPage('events');
   };
@@ -122,339 +157,467 @@ export default function App() {
     setEvents(prev =>
       prev.map(e => {
         if (e.id !== id) return e;
-        const nextStatus: EventStatus =
+        const next: EventStatus =
           e.status === 'CONFIRMED'
             ? 'DELAYED'
             : e.status === 'DELAYED'
             ? 'CANCELLED'
             : 'CONFIRMED';
-        return { ...e, status: nextStatus };
+        return { ...e, status: next };
       })
     );
   };
 
   const handleDelete = (id: string) => {
     setEvents(prev => prev.filter(e => e.id !== id));
-    setNotice('Evento eliminado.');
+    setFeedback('Actuación eliminada.');
   };
 
   const toggleTheme = () => {
     setThemeMode(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Helper for Status Badge styles
   const getStatusBadge = (status: EventStatus) => {
     if (status === 'CONFIRMED') {
       return {
-        bg: t.statGreenBg,
-        border: t.statGreenBorder,
-        text: t.statGreenText,
-        dot: t.statGreenText,
-        label: 'CONFIRMADO',
+        bg: t.greenBg,
+        border: t.greenBorder,
+        color: t.green,
+        label: 'Confirmado',
+        Icon: CheckCircle2,
       };
     }
     if (status === 'DELAYED') {
       return {
-        bg: t.statAmberBg,
-        border: t.statAmberBorder,
-        text: t.statAmberText,
-        dot: t.statAmberText,
-        label: 'RETRASADO',
+        bg: t.amberBg,
+        border: t.amberBorder,
+        color: t.amber,
+        label: 'Retrasado',
+        Icon: AlertCircle,
       };
     }
     return {
-      bg: t.statRedBg,
-      border: t.statRedBorder,
-      text: t.statRedText,
-      dot: t.statRedText,
-      label: 'CANCELADO',
+      bg: t.redBg,
+      border: t.redBorder,
+      color: t.red,
+      label: 'Cancelado',
+      Icon: XCircle,
     };
   };
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: t.bg }]}>
-      <View style={[styles.shell, wide && styles.shellWide]}>
-        {/* ===================== SIDEBAR ===================== */}
-        <View style={[wide ? styles.sidebar : styles.mobileNav, { backgroundColor: t.sidebarBg, borderColor: t.border }]}>
-          {/* Logo / Brand */}
-          <View style={styles.brandRow}>
-            <View style={[styles.brandIcon, { backgroundColor: t.heroBg, borderColor: t.border }]}>
-              <Text style={{ fontSize: 16 }}>⚡</Text>
-            </View>
-            <View>
-              <Text style={[styles.brandTitle, { color: t.text }]}>FestOps</Text>
-              <Text style={[styles.brandSub, { color: t.textSub }]}>FESTIVAL CONTROL</Text>
-            </View>
-          </View>
-
-          {/* User Profile (Desktop only) */}
-          {wide && (
-            <View style={[styles.userCard, { backgroundColor: t.cardElevated, borderColor: t.borderSubtle }]}>
-              <View style={[styles.avatar, { backgroundColor: t.heroBg, borderColor: t.border }]}>
-                <Text style={{ fontSize: 18 }}>🎧</Text>
-              </View>
-              <Text style={[styles.userName, { color: t.text }]}>Operador Central</Text>
-              <Text style={[styles.userRole, { color: t.textSub }]}>Live Operations · ZGZ</Text>
-            </View>
-          )}
-
-          {/* Navigation Items */}
-          <View style={wide ? styles.navGroup : styles.mobileNavGroup}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setPage('dashboard')}
-              style={[
-                styles.navBtn,
-                page === 'dashboard' && { backgroundColor: t.actionBg, borderColor: t.border },
-              ]}
-            >
-              <Text style={{ fontSize: 14, marginRight: 8 }}>📊</Text>
-              <Text
-                style={[
-                  styles.navBtnText,
-                  { color: page === 'dashboard' ? t.text : t.textMuted },
-                  page === 'dashboard' && { fontWeight: '700' },
-                ]}
-              >
-                Dashboard
-              </Text>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setPage('events')}
-              style={[
-                styles.navBtn,
-                page === 'events' && { backgroundColor: t.actionBg, borderColor: t.border },
-              ]}
-            >
-              <Text style={{ fontSize: 14, marginRight: 8 }}>🎵</Text>
-              <Text
-                style={[
-                  styles.navBtnText,
-                  { color: page === 'events' ? t.text : t.textMuted },
-                  page === 'events' && { fontWeight: '700' },
-                ]}
-              >
-                Programación
-              </Text>
-              <View style={[styles.countBadge, { backgroundColor: t.border }]}>
-                <Text style={[styles.countText, { color: t.text }]}>{events.length}</Text>
-              </View>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={openNew}
-              style={[
-                styles.navBtn,
-                page === 'form' && !editingId && { backgroundColor: t.actionBg, borderColor: t.border },
-              ]}
-            >
-              <Text style={{ fontSize: 14, marginRight: 8 }}>➕</Text>
-              <Text
-                style={[
-                  styles.navBtnText,
-                  { color: page === 'form' ? t.text : t.textMuted },
-                  page === 'form' && { fontWeight: '700' },
-                ]}
-              >
-                Nuevo Evento
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Sidebar Footer: Theme Toggle & Status */}
-          {wide && (
-            <View style={[styles.sidebarFooter, { borderTopColor: t.borderSubtle }]}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={toggleTheme}
-                style={[styles.themeToggle, { backgroundColor: t.cardElevated, borderColor: t.border }]}
-              >
-                <Text style={[styles.themeLabel, { color: t.textMuted }]}>
-                  {themeMode === 'dark' ? '🌙 Modo Oscuro' : '☀️ Modo Claro'}
-                </Text>
-                <View
-                  style={[
-                    styles.toggleSwitch,
-                    { backgroundColor: themeMode === 'dark' ? t.border : '#E2E8F0' },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.toggleKnob,
-                      {
-                        backgroundColor: t.text,
-                        alignSelf: themeMode === 'dark' ? 'flex-end' : 'flex-start',
-                      },
-                    ]}
-                  />
-                </View>
-              </Pressable>
-
-              <View style={styles.liveIndicatorRow}>
-                <View style={[styles.liveDot, { backgroundColor: t.statGreenText }]} />
-                <Text style={[styles.liveText, { color: t.textSub }]}>LIVE DEMO · EXPO WEB</Text>
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* ===================== MAIN CONTENT AREA ===================== */}
-        <ScrollView
-          style={styles.mainScroll}
-          contentContainerStyle={[styles.mainContent, { backgroundColor: t.bg }]}
-        >
-          {/* Top Header Bar */}
-          <View style={styles.topHeader}>
-            <View>
-              <Text style={[styles.greeting, { color: t.text }]}>Hola, Operador 👋</Text>
-              <Text style={[styles.greetingSub, { color: t.textSub }]}>
-                Festival Zaragoza 2026 · Control en directo
-              </Text>
-            </View>
-
-            {/* Quick theme toggle on mobile or top bar */}
+    <SafeAreaView style={[styles.viewport, { backgroundColor: t.bg }]}>
+      {/* ===================== FLOATING APPLICATION SHELL ===================== */}
+      <View style={[styles.shell, { backgroundColor: t.shellBg, borderColor: t.border }]}>
+        {/* ===================== GLOBAL PERSISTENT HEADER ===================== */}
+        <View style={[styles.globalHeader, { borderBottomColor: t.borderSubtle }]}>
+          {/* Left: Mobile Drawer Trigger / Brand */}
+          <View style={styles.headerLeft}>
             {!wide && (
               <Pressable
-                onPress={toggleTheme}
-                style={[styles.mobileThemeBtn, { backgroundColor: t.card, borderColor: t.border }]}
+                accessibilityLabel="Abrir menú de navegación"
+                onPress={() => setDrawerOpen(true)}
+                style={[styles.hamburgerBtn, { borderColor: t.border, backgroundColor: t.cardElevated }]}
               >
-                <Text style={{ fontSize: 13, color: t.text }}>
-                  {themeMode === 'dark' ? '☀️ Claro' : '🌙 Oscuro'}
-                </Text>
+                <Menu size={18} color={t.text} />
               </Pressable>
             )}
+
+            <View style={styles.brandGroup}>
+              <View style={[styles.brandMark, { backgroundColor: t.primary }]}>
+                <Radio size={14} color={t.primaryText} />
+              </View>
+              <View>
+                <Text style={[styles.brandName, { color: t.text }]}>FestOps</Text>
+                <Text style={[styles.brandTag, { color: t.textSub }]}>ZARAGOZA · 2026</Text>
+              </View>
+            </View>
           </View>
 
-          {/* Feedback notice if any */}
-          {!!notice && (
-            <View style={[styles.alertBanner, { backgroundColor: t.statGreenBg, borderColor: t.statGreenBorder }]}>
-              <Text style={[styles.alertText, { color: t.statGreenText }]}>✔ {notice}</Text>
+          {/* Center: Stage quick selector pills (Desktop) */}
+          {wide && (
+            <View style={styles.headerCenter}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.headerPills}>
+                {['TODOS', ...stages].map(st => {
+                  const active = stageFilter === st;
+                  return (
+                    <Pressable
+                      key={st}
+                      onPress={() => {
+                        setStageFilter(st);
+                        if (page === 'form') setPage('dashboard');
+                      }}
+                      style={[
+                        styles.headerPill,
+                        {
+                          backgroundColor: active ? t.primary : t.cardElevated,
+                          borderColor: active ? t.primary : t.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.headerPillText,
+                          { color: active ? t.primaryText : t.textMuted },
+                          active && { fontWeight: '700' },
+                        ]}
+                      >
+                        {st}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
             </View>
           )}
 
-          {/* ===================== PAGE: DASHBOARD ===================== */}
-          {page === 'dashboard' && (
-            <View style={styles.pageContainer}>
-              {/* Central Hero Card ("My Card" aesthetic from reference) */}
-              <View style={[styles.heroCard, { backgroundColor: t.heroBg, borderColor: t.heroBorder }]}>
-                <View style={styles.heroTopRow}>
-                  <View style={styles.heroTagBadge}>
-                    <Text style={styles.heroTagText}>ESCENARIO PRINCIPAL</Text>
-                  </View>
-                  <View style={styles.heroLiveBadge}>
-                    <View style={[styles.liveDot, { backgroundColor: '#34D399' }]} />
-                    <Text style={styles.heroLiveText}>EN VIVO</Text>
-                  </View>
-                </View>
+          {/* Right: Live badge + Theme Switch + Operator Profile */}
+          <View style={styles.headerRight}>
+            <View style={[styles.liveChip, { backgroundColor: t.greenBg, borderColor: t.greenBorder }]}>
+              <View style={[styles.livePulse, { backgroundColor: t.green }]} />
+              <Text style={[styles.liveChipText, { color: t.green }]}>EN VIVO</Text>
+            </View>
 
-                <View style={styles.heroBody}>
-                  <Text style={[styles.heroTitle, { color: t.heroText }]}>
-                    {nextEvent ? nextEvent.artist : 'THE NIGHT IS YOURS'}
-                  </Text>
-                  <Text style={[styles.heroTime, { color: t.heroSub }]}>
-                    {nextEvent ? `${nextEvent.time} · ${nextEvent.space}` : 'Zaragoza Live Festival 2026'}
-                  </Text>
-                </View>
+            <Pressable
+              accessibilityLabel="Alternar modo claro y oscuro"
+              onPress={toggleTheme}
+              style={[styles.iconBtn, { borderColor: t.border, backgroundColor: t.cardElevated }]}
+            >
+              {themeMode === 'dark' ? <Sun size={16} color={t.text} /> : <Moon size={16} color={t.text} />}
+            </Pressable>
 
-                <View style={styles.heroActionsRow}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={openNew}
-                    style={styles.heroBtnPrimary}
-                  >
-                    <Text style={styles.heroBtnPrimaryText}>＋ Nuevo Evento</Text>
+            {wide && (
+              <View style={[styles.profileChip, { borderColor: t.border, backgroundColor: t.cardElevated }]}>
+                <View style={[styles.profileAvatar, { backgroundColor: t.primary }]}>
+                  <User size={13} color={t.primaryText} />
+                </View>
+                <View>
+                  <Text style={[styles.profileName, { color: t.text }]}>Operador ZGZ</Text>
+                  <Text style={[styles.profileRole, { color: t.textSub }]}>Control Central</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* ===================== BODY: RAIL + WORKSPACE ===================== */}
+        <View style={styles.shellBody}>
+          {/* Desktop Left Rail Navigation (panze studio style) */}
+          {wide && (
+            <View style={[styles.leftRail, { borderRightColor: t.borderSubtle, backgroundColor: t.railBg }]}>
+              <View style={styles.railNavGroup}>
+                <Pressable
+                  accessibilityLabel="Ir al Dashboard"
+                  onPress={() => setPage('dashboard')}
+                  style={[
+                    styles.railBtn,
+                    page === 'dashboard' && [styles.railBtnActive, { backgroundColor: t.railActive }],
+                  ]}
+                >
+                  <LayoutDashboard size={20} color={page === 'dashboard' ? t.text : t.textMuted} />
+                  <Text style={[styles.railTooltip, { color: page === 'dashboard' ? t.text : t.textSub }]}>
+                    Panel
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityLabel="Ir a Programación"
+                  onPress={() => setPage('events')}
+                  style={[
+                    styles.railBtn,
+                    page === 'events' && [styles.railBtnActive, { backgroundColor: t.railActive }],
+                  ]}
+                >
+                  <Calendar size={20} color={page === 'events' ? t.text : t.textMuted} />
+                  <Text style={[styles.railTooltip, { color: page === 'events' ? t.text : t.textSub }]}>
+                    Eventos
+                  </Text>
+                  <View style={[styles.railBadge, { backgroundColor: t.primary }]}>
+                    <Text style={[styles.railBadgeText, { color: t.primaryText }]}>{events.length}</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  accessibilityLabel="Crear nuevo evento"
+                  onPress={openNew}
+                  style={[
+                    styles.railBtn,
+                    page === 'form' && !editingId && [styles.railBtnActive, { backgroundColor: t.railActive }],
+                  ]}
+                >
+                  <PlusCircle size={20} color={page === 'form' ? t.text : t.textMuted} />
+                  <Text style={[styles.railTooltip, { color: page === 'form' ? t.text : t.textSub }]}>
+                    Nuevo
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.railFooter}>
+                <Pressable
+                  accessibilityLabel="Cambiar tema"
+                  onPress={toggleTheme}
+                  style={[styles.railBtn, { backgroundColor: t.cardElevated, borderColor: t.border, borderWidth: 1 }]}
+                >
+                  {themeMode === 'dark' ? <Sun size={18} color={t.text} /> : <Moon size={18} color={t.text} />}
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {/* ===================== WORKSPACE SCROLL CONTENT ===================== */}
+          <ScrollView
+            style={styles.workspaceScroll}
+            contentContainerStyle={styles.workspaceContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Feedback notification banner */}
+            {!!feedback && (
+              <View style={[styles.feedbackBanner, { backgroundColor: t.greenBg, borderColor: t.greenBorder }]}>
+                <CheckCircle2 size={16} color={t.green} />
+                <Text style={[styles.feedbackText, { color: t.green }]}>{feedback}</Text>
+              </View>
+            )}
+
+            {/* Title Header with Search Bar */}
+            <View style={styles.titleSection}>
+              <View>
+                <Text style={[styles.kickerText, { color: t.textSub }]}>OPERACIONES Y HORARIOS EN DIRECTO</Text>
+                <Text style={[styles.h1Text, { color: t.text }]}>
+                  {page === 'dashboard'
+                    ? 'Panel de Control'
+                    : page === 'events'
+                    ? 'Programación del Festival'
+                    : editingId
+                    ? 'Editar Actuación'
+                    : 'Añadir Actuación'}
+                </Text>
+              </View>
+
+              <View style={[styles.searchBox, { backgroundColor: t.inputBg, borderColor: t.inputBorder }]}>
+                <Search size={16} color={t.textSub} />
+                <TextInput
+                  placeholder="Buscar artista, escenario, ID..."
+                  placeholderTextColor={t.textSub}
+                  style={[styles.searchInput, { color: t.text }]}
+                  value={search}
+                  onChangeText={setSearch}
+                />
+                {!!search && (
+                  <Pressable onPress={() => setSearch('')}>
+                    <X size={14} color={t.textSub} />
                   </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setPage('events')}
-                    style={styles.heroBtnSecondary}
-                  >
-                    <Text style={styles.heroBtnSecondaryText}>Ver Programación</Text>
+                )}
+              </View>
+            </View>
+
+            {/* ===================== PAGE: DASHBOARD ===================== */}
+            {page === 'dashboard' && (
+              <View style={styles.dashboardGrid}>
+                {/* Column 1: Timeline / Live Feed ("Transactions" style) */}
+                <View style={[styles.dashCard, { backgroundColor: t.card, borderColor: t.border }]}>
+                  <View style={styles.cardTopRow}>
+                    <View>
+                      <Text style={[styles.cardTitle, { color: t.text }]}>Próximas Actuaciones</Text>
+                      <Text style={[styles.cardSub, { color: t.textSub }]}>{events.length} programadas</Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={openNew}
+                      style={[styles.smallActionBtn, { backgroundColor: t.cardElevated, borderColor: t.border }]}
+                    >
+                      <PlusCircle size={14} color={t.text} />
+                      <Text style={[styles.smallActionBtnText, { color: t.text }]}>Añadir</Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.feedList}>
+                    {events.slice(0, 5).map(e => {
+                      const badge = getStatusBadge(e.status);
+                      const BadgeIcon = badge.Icon;
+                      return (
+                        <View
+                          key={e.id}
+                          style={[styles.feedRow, { borderColor: t.borderSubtle, backgroundColor: t.cardElevated }]}
+                        >
+                          <View style={styles.feedRowMain}>
+                            <View style={[styles.timeBox, { backgroundColor: t.borderSubtle }]}>
+                              <Clock size={12} color={t.textMuted} />
+                              <Text style={[styles.timeBoxText, { color: t.text }]}>{e.time}</Text>
+                            </View>
+
+                            <View style={styles.artistInfo}>
+                              <Text style={[styles.artistName, { color: t.text }]}>{e.artist}</Text>
+                              <View style={styles.stageLocationRow}>
+                                <MapPin size={11} color={t.textSub} />
+                                <Text style={[styles.stageLocationText, { color: t.textSub }]}>
+                                  {e.space} · {e.id}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <Pressable
+                              onPress={() => handleCycleStatus(e.id)}
+                              style={[
+                                styles.statusPill,
+                                { backgroundColor: badge.bg, borderColor: badge.border },
+                              ]}
+                            >
+                              <BadgeIcon size={12} color={badge.color} />
+                              <Text style={[styles.statusPillText, { color: badge.color }]}>
+                                {badge.label}
+                              </Text>
+                            </Pressable>
+                          </View>
+
+                          <View style={[styles.rowActions, { borderTopColor: t.borderSubtle }]}>
+                            <Pressable onPress={() => openEdit(e)} style={styles.actionLink}>
+                              <Edit3 size={12} color={t.textMuted} />
+                              <Text style={[styles.actionLinkText, { color: t.textMuted }]}>Editar</Text>
+                            </Pressable>
+                            <Pressable onPress={() => handleCycleStatus(e.id)} style={styles.actionLink}>
+                              <RefreshCw size={12} color={t.primary} />
+                              <Text style={[styles.actionLinkText, { color: t.primary }]}>Cambiar Estado</Text>
+                            </Pressable>
+                            <Pressable onPress={() => handleDelete(e.id)} style={styles.actionLink}>
+                              <Trash2 size={12} color={t.red} />
+                              <Text style={[styles.actionLinkText, { color: t.red }]}>Eliminar</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  <Pressable onPress={() => setPage('events')} style={styles.viewAllFooter}>
+                    <Text style={[styles.viewAllText, { color: t.primary }]}>Ver toda la programación →</Text>
                   </Pressable>
                 </View>
-              </View>
 
-              {/* Financial Record Style -> 3 KPI Summary Cards */}
-              <View style={styles.sectionHeaderRow}>
-                <Text style={[styles.sectionTitle, { color: t.text }]}>Estado de Operaciones</Text>
-                <Text style={[styles.sectionSub, { color: t.textSub }]}>Tiempo real</Text>
-              </View>
+                {/* Column 2: Status Distribution & Headliner Card */}
+                <View style={styles.dashColMiddle}>
+                  {/* Status Progress Bars (panze studio invoice/project overview style) */}
+                  <View style={[styles.dashCard, { backgroundColor: t.card, borderColor: t.border }]}>
+                    <View style={styles.cardTopRow}>
+                      <View>
+                        <Text style={[styles.cardTitle, { color: t.text }]}>Estado General</Text>
+                        <Text style={[styles.cardSub, { color: t.textSub }]}>Métricas en vivo</Text>
+                      </View>
+                      <View style={[styles.metricCountBadge, { backgroundColor: t.cardElevated }]}>
+                        <Text style={[styles.metricCountText, { color: t.text }]}>{total} Actos</Text>
+                      </View>
+                    </View>
 
-              <View style={[styles.statsRow, wide && styles.statsRowWide]}>
-                {/* Stat 1: Confirmados */}
-                <View
-                  style={[
-                    styles.statCard,
-                    { backgroundColor: t.statGreenBg, borderColor: t.statGreenBorder },
-                  ]}
-                >
-                  <View style={styles.statHeader}>
-                    <Text style={[styles.statLabel, { color: t.statGreenText }]}>CONFIRMADOS</Text>
-                    <Text style={{ fontSize: 13 }}>🟢</Text>
+                    {/* Bars */}
+                    <View style={styles.barsGroup}>
+                      {/* Confirmados */}
+                      <View style={styles.barItem}>
+                        <View style={styles.barLabelRow}>
+                          <View style={styles.barTitleGroup}>
+                            <CheckCircle2 size={13} color={t.green} />
+                            <Text style={[styles.barTitleText, { color: t.text }]}>Confirmados</Text>
+                          </View>
+                          <Text style={[styles.barValueText, { color: t.green }]}>
+                            {confirmed} ({confirmedPct}%)
+                          </Text>
+                        </View>
+                        <View style={[styles.progressTrack, { backgroundColor: t.borderSubtle }]}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              { backgroundColor: t.green, width: `${confirmedPct}%` },
+                            ]}
+                          />
+                        </View>
+                      </View>
+
+                      {/* Retrasados */}
+                      <View style={styles.barItem}>
+                        <View style={styles.barLabelRow}>
+                          <View style={styles.barTitleGroup}>
+                            <AlertCircle size={13} color={t.amber} />
+                            <Text style={[styles.barTitleText, { color: t.text }]}>Retrasados</Text>
+                          </View>
+                          <Text style={[styles.barValueText, { color: t.amber }]}>
+                            {delayed} ({delayedPct}%)
+                          </Text>
+                        </View>
+                        <View style={[styles.progressTrack, { backgroundColor: t.borderSubtle }]}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              { backgroundColor: t.amber, width: `${delayedPct}%` },
+                            ]}
+                          />
+                        </View>
+                      </View>
+
+                      {/* Cancelados */}
+                      <View style={styles.barItem}>
+                        <View style={styles.barLabelRow}>
+                          <View style={styles.barTitleGroup}>
+                            <XCircle size={13} color={t.red} />
+                            <Text style={[styles.barTitleText, { color: t.text }]}>Cancelados</Text>
+                          </View>
+                          <Text style={[styles.barValueText, { color: t.red }]}>
+                            {cancelled} ({cancelledPct}%)
+                          </Text>
+                        </View>
+                        <View style={[styles.progressTrack, { backgroundColor: t.borderSubtle }]}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              { backgroundColor: t.red, width: `${cancelledPct}%` },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    </View>
                   </View>
-                  <Text style={[styles.statValue, { color: t.statGreenText }]}>
-                    {String(confirmed).padStart(2, '0')}
-                  </Text>
-                  <Text style={[styles.statFooter, { color: t.statGreenText }]}>
-                    ● En horario previsto
-                  </Text>
+
+                  {/* Headliner Spotlight Card */}
+                  <View style={[styles.spotlightCard, { backgroundColor: t.primary, borderColor: t.border }]}>
+                    <View style={styles.spotlightTop}>
+                      <View style={styles.spotlightBadge}>
+                        <Sparkles size={12} color={t.primaryText} />
+                        <Text style={[styles.spotlightBadgeText, { color: t.primaryText }]}>HEADLINER</Text>
+                      </View>
+                      <Text style={[styles.spotlightTime, { color: t.primaryText }]}>
+                        {headliner ? headliner.time : '23:00'}
+                      </Text>
+                    </View>
+
+                    <Text style={[styles.spotlightArtist, { color: t.primaryText }]}>
+                      {headliner ? headliner.artist : 'NEON WAVES'}
+                    </Text>
+                    <Text style={[styles.spotlightStage, { color: t.primaryText, opacity: 0.8 }]}>
+                      {headliner ? headliner.space : 'MAIN STAGE'} · Escenario Principal
+                    </Text>
+
+                    <Pressable
+                      onPress={() => {
+                        if (headliner) openEdit(headliner);
+                      }}
+                      style={[styles.spotlightBtn, { backgroundColor: t.shellBg }]}
+                    >
+                      <Text style={[styles.spotlightBtnText, { color: t.text }]}>Gestionar Actuación</Text>
+                      <ChevronRight size={14} color={t.text} />
+                    </Pressable>
+                  </View>
                 </View>
 
-                {/* Stat 2: Retrasados */}
-                <View
-                  style={[
-                    styles.statCard,
-                    { backgroundColor: t.statAmberBg, borderColor: t.statAmberBorder },
-                  ]}
-                >
-                  <View style={styles.statHeader}>
-                    <Text style={[styles.statLabel, { color: t.statAmberText }]}>RETRASADOS</Text>
-                    <Text style={{ fontSize: 13 }}>⚠️</Text>
-                  </View>
-                  <Text style={[styles.statValue, { color: t.statAmberText }]}>
-                    {String(delayed).padStart(2, '0')}
-                  </Text>
-                  <Text style={[styles.statFooter, { color: t.statAmberText }]}>
-                    ▲ Monitoreando horario
-                  </Text>
-                </View>
-
-                {/* Stat 3: Total Programados */}
-                <View
-                  style={[
-                    styles.statCard,
-                    { backgroundColor: t.statBlueBg, borderColor: t.statBlueBorder },
-                  ]}
-                >
-                  <View style={styles.statHeader}>
-                    <Text style={[styles.statLabel, { color: t.statBlueText }]}>TOTAL EVENTOS</Text>
-                    <Text style={{ fontSize: 13 }}>🎵</Text>
-                  </View>
-                  <Text style={[styles.statValue, { color: t.statBlueText }]}>
-                    {String(events.length).padStart(2, '0')}
-                  </Text>
-                  <Text style={[styles.statFooter, { color: t.statBlueText }]}>
-                    4 escenarios activos
-                  </Text>
-                </View>
-              </View>
-
-              {/* Two-Column Area: Escenarios + Próximas Actuaciones (Transactions style) */}
-              <View style={[styles.splitGrid, wide && styles.splitGridWide]}>
-                {/* Left: Escenarios Activos */}
-                <View style={[styles.splitCol, { backgroundColor: t.card, borderColor: t.border }]}>
-                  <View style={styles.cardHeader}>
-                    <Text style={[styles.cardTitle, { color: t.text }]}>Escenarios del Festival</Text>
-                    <Text style={[styles.cardSubtitle, { color: t.textSub }]}>4 Ubicaciones</Text>
+                {/* Column 3: Escenarios del Festival (4 active stages) */}
+                <View style={[styles.dashCard, { backgroundColor: t.card, borderColor: t.border }]}>
+                  <View style={styles.cardTopRow}>
+                    <View>
+                      <Text style={[styles.cardTitle, { color: t.text }]}>Escenarios Activos</Text>
+                      <Text style={[styles.cardSub, { color: t.textSub }]}>4 ubicaciones en directo</Text>
+                    </View>
                   </View>
 
-                  <View style={styles.stagesList}>
+                  <View style={styles.stagesStack}>
                     {stages.map((st, i) => {
-                      const countOnStage = events.filter(e => e.space === st).length;
-                      const nextOnStage = events.find(e => e.space === st);
+                      const count = events.filter(e => e.space === st).length;
+                      const next = events.find(e => e.space === st);
                       return (
                         <Pressable
                           key={st}
@@ -462,280 +625,206 @@ export default function App() {
                             setStageFilter(st);
                             setPage('events');
                           }}
-                          style={[styles.stageItem, { borderColor: t.borderSubtle, backgroundColor: t.cardElevated }]}
+                          style={[styles.stageCard, { backgroundColor: t.cardElevated, borderColor: t.borderSubtle }]}
                         >
-                          <View style={styles.stageItemLeft}>
-                            <View style={[styles.stageBadgeIcon, { backgroundColor: t.actionBg }]}>
-                              <Text style={[styles.stageNumberText, { color: t.text }]}>{`0${i + 1}`}</Text>
+                          <View style={styles.stageCardHeader}>
+                            <View style={styles.stageTitleRow}>
+                              <View style={[styles.stageIndexBadge, { backgroundColor: t.borderSubtle }]}>
+                                <Text style={[styles.stageIndexText, { color: t.text }]}>{`0${i + 1}`}</Text>
+                              </View>
+                              <Text style={[styles.stageTitle, { color: t.text }]}>{st}</Text>
                             </View>
-                            <View>
-                              <Text style={[styles.stageName, { color: t.text }]}>{st}</Text>
-                              <Text style={[styles.stageSub, { color: t.textSub }]}>
-                                {nextOnStage ? `Próximo: ${nextOnStage.artist} (${nextOnStage.time})` : 'Sin eventos'}
-                              </Text>
+                            <View style={[styles.stageCountChip, { backgroundColor: t.borderSubtle }]}>
+                              <Text style={[styles.stageCountChipText, { color: t.text }]}>{count} acts</Text>
                             </View>
                           </View>
-                          <View style={[styles.stageCountPill, { backgroundColor: t.badgeBg }]}>
-                            <Text style={[styles.stageCountText, { color: t.text }]}>{countOnStage} acts</Text>
-                          </View>
+
+                          <Text style={[styles.stageNextText, { color: t.textSub }]}>
+                            {next ? `Próximo: ${next.artist} (${next.time})` : 'Sin actuaciones programadas'}
+                          </Text>
                         </Pressable>
                       );
                     })}
                   </View>
                 </View>
-
-                {/* Right: Próximas Actuaciones (Transaction Feed style) */}
-                <View style={[styles.splitCol, { backgroundColor: t.card, borderColor: t.border }]}>
-                  <View style={styles.cardHeader}>
-                    <Text style={[styles.cardTitle, { color: t.text }]}>Timeline de Conciertos</Text>
-                    <Pressable onPress={() => setPage('events')}>
-                      <Text style={[styles.cardLink, { color: t.primary }]}>Ver Todos →</Text>
-                    </Pressable>
-                  </View>
-
-                  <View style={styles.eventsFeedList}>
-                    {events.slice(0, 4).map(e => {
-                      const badge = getStatusBadge(e.status);
-                      return (
-                        <View
-                          key={e.id}
-                          style={[styles.feedItem, { borderColor: t.borderSubtle, backgroundColor: t.cardElevated }]}
-                        >
-                          <View style={styles.feedItemHeader}>
-                            <View style={[styles.timePill, { backgroundColor: t.actionBg }]}>
-                              <Text style={[styles.timeText, { color: t.text }]}>{e.time}</Text>
-                            </View>
-                            <Pressable
-                              onPress={() => handleCycleStatus(e.id)}
-                              style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.border }]}
-                            >
-                              <View style={[styles.statusDot, { backgroundColor: badge.dot }]} />
-                              <Text style={[styles.statusText, { color: badge.text }]}>{badge.label}</Text>
-                            </Pressable>
-                          </View>
-
-                          <Text style={[styles.feedArtist, { color: t.text }]}>{e.artist}</Text>
-                          <Text style={[styles.feedSpace, { color: t.textSub }]}>
-                            {e.space} · {e.id}
-                          </Text>
-
-                          <View style={[styles.feedActions, { borderTopColor: t.borderSubtle }]}>
-                            <Pressable onPress={() => openEdit(e)} style={styles.actionBtn}>
-                              <Text style={[styles.actionBtnText, { color: t.text }]}>Editar</Text>
-                            </Pressable>
-                            <Pressable onPress={() => handleCycleStatus(e.id)} style={styles.actionBtn}>
-                              <Text style={[styles.actionBtnText, { color: t.primary }]}>Cambiar Estado</Text>
-                            </Pressable>
-                            <Pressable onPress={() => handleDelete(e.id)} style={styles.actionBtn}>
-                              <Text style={[styles.actionBtnText, { color: t.statRedText }]}>Eliminar</Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* ===================== PAGE: PROGRAMACIÓN (EVENTS) ===================== */}
-          {page === 'events' && (
-            <View style={styles.pageContainer}>
-              <View style={[styles.eventsHeaderCard, { backgroundColor: t.card, borderColor: t.border }]}>
-                <View style={styles.eventsHeaderTop}>
-                  <View>
-                    <Text style={[styles.sectionTitle, { color: t.text }]}>Programación Completa</Text>
-                    <Text style={[styles.sectionSub, { color: t.textSub }]}>
-                      {filteredEvents.length} conciertos encontrados
-                    </Text>
+            {/* ===================== PAGE: PROGRAMACIÓN (EVENTS) ===================== */}
+            {page === 'events' && (
+              <View style={styles.eventsContainer}>
+                {/* Stage Filters Bar */}
+                <View style={[styles.filterBar, { backgroundColor: t.card, borderColor: t.border }]}>
+                  <View style={styles.filterBarLeft}>
+                    <SlidersHorizontal size={16} color={t.textMuted} />
+                    <Text style={[styles.filterBarTitle, { color: t.text }]}>Filtrar por Escenario:</Text>
                   </View>
-                  <Pressable accessibilityRole="button" onPress={openNew} style={styles.primaryPillBtn}>
-                    <Text style={styles.primaryPillBtnText}>＋ Nuevo Evento</Text>
-                  </Pressable>
-                </View>
 
-                {/* Search Bar */}
-                <View style={[styles.searchBox, { backgroundColor: t.inputBg, borderColor: t.inputBorder }]}>
-                  <Text style={{ marginRight: 8, fontSize: 14 }}>🔍</Text>
-                  <TextInput
-                    accessibilityLabel="Buscar artista o ID"
-                    placeholder="Buscar artista, escenario o ID..."
-                    placeholderTextColor={t.textSub}
-                    style={[styles.searchInput, { color: t.text }]}
-                    value={search}
-                    onChangeText={setSearch}
-                  />
-                  {!!search && (
-                    <Pressable onPress={() => setSearch('')}>
-                      <Text style={{ color: t.textSub, fontSize: 13 }}>✕</Text>
-                    </Pressable>
-                  )}
-                </View>
-
-                {/* Stage Filter Pills */}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.filterPillsContainer}
-                >
-                  {['TODOS', ...stages].map(st => {
-                    const isActive = stageFilter === st;
-                    return (
-                      <Pressable
-                        key={st}
-                        onPress={() => setStageFilter(st)}
-                        style={[
-                          styles.filterPill,
-                          { backgroundColor: isActive ? t.heroBg : t.cardElevated, borderColor: isActive ? t.primary : t.border },
-                        ]}
-                      >
-                        <Text
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterPillsRow}>
+                    {['TODOS', ...stages].map(st => {
+                      const active = stageFilter === st;
+                      return (
+                        <Pressable
+                          key={st}
+                          onPress={() => setStageFilter(st)}
                           style={[
-                            styles.filterPillText,
-                            { color: isActive ? '#FFFFFF' : t.textMuted },
-                            isActive && { fontWeight: '700' },
+                            styles.filterPillItem,
+                            {
+                              backgroundColor: active ? t.primary : t.cardElevated,
+                              borderColor: active ? t.primary : t.border,
+                            },
                           ]}
                         >
-                          {st}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
+                          <Text
+                            style={[
+                              styles.filterPillItemText,
+                              { color: active ? t.primaryText : t.textMuted },
+                              active && { fontWeight: '700' },
+                            ]}
+                          >
+                            {st}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
 
-              {/* Event Cards Grid */}
-              <View style={styles.eventsList}>
+                {/* Grid of full cards */}
                 {filteredEvents.length === 0 ? (
-                  <View style={[styles.emptyStateCard, { backgroundColor: t.card, borderColor: t.border }]}>
-                    <Text style={{ fontSize: 32, marginBottom: 12 }}>🔎</Text>
-                    <Text style={[styles.emptyTitle, { color: t.text }]}>No se encontraron eventos</Text>
-                    <Text style={[styles.emptySub, { color: t.textSub }]}>
-                      Prueba con otro término de búsqueda o selecciona otro escenario.
+                  <View style={[styles.emptyContainer, { backgroundColor: t.card, borderColor: t.border }]}>
+                    <Search size={32} color={t.textSub} />
+                    <Text style={[styles.emptyTitle, { color: t.text }]}>Sin resultados</Text>
+                    <Text style={[styles.emptySubtitle, { color: t.textSub }]}>
+                      No hay eventos que coincidan con los filtros seleccionados.
                     </Text>
                     <Pressable
                       onPress={() => {
                         setSearch('');
                         setStageFilter('TODOS');
                       }}
-                      style={[styles.resetBtn, { backgroundColor: t.actionBg }]}
+                      style={[styles.emptyResetBtn, { backgroundColor: t.primary }]}
                     >
-                      <Text style={[styles.resetBtnText, { color: t.text }]}>Restablecer Filtros</Text>
+                      <Text style={[styles.emptyResetBtnText, { color: t.primaryText }]}>Restablecer filtros</Text>
                     </Pressable>
                   </View>
                 ) : (
-                  filteredEvents.map(e => {
-                    const badge = getStatusBadge(e.status);
-                    return (
-                      <View
-                        key={e.id}
-                        style={[styles.fullEventCard, { backgroundColor: t.card, borderColor: t.border }]}
-                      >
-                        <View style={styles.fullCardHeader}>
-                          <View style={styles.fullCardHeaderLeft}>
-                            <View style={[styles.timeBadgeLarge, { backgroundColor: t.actionBg }]}>
-                              <Text style={[styles.timeBadgeLargeText, { color: t.text }]}>{e.time}</Text>
+                  <View style={styles.eventsGrid}>
+                    {filteredEvents.map(e => {
+                      const badge = getStatusBadge(e.status);
+                      const BadgeIcon = badge.Icon;
+                      return (
+                        <View
+                          key={e.id}
+                          style={[styles.eventDetailCard, { backgroundColor: t.card, borderColor: t.border }]}
+                        >
+                          <View style={styles.eventCardTop}>
+                            <View style={[styles.timeTag, { backgroundColor: t.cardElevated, borderColor: t.border }]}>
+                              <Clock size={12} color={t.textMuted} />
+                              <Text style={[styles.timeTagText, { color: t.text }]}>{e.time}</Text>
                             </View>
-                            <View>
-                              <Text style={[styles.fullArtist, { color: t.text }]}>{e.artist}</Text>
-                              <Text style={[styles.fullSpace, { color: t.textSub }]}>
-                                {e.space} · {e.id}
-                              </Text>
-                            </View>
+
+                            <Pressable
+                              onPress={() => handleCycleStatus(e.id)}
+                              style={[
+                                styles.statusPill,
+                                { backgroundColor: badge.bg, borderColor: badge.border },
+                              ]}
+                            >
+                              <BadgeIcon size={12} color={badge.color} />
+                              <Text style={[styles.statusPillText, { color: badge.color }]}>{badge.label}</Text>
+                            </Pressable>
                           </View>
 
-                          <Pressable
-                            onPress={() => handleCycleStatus(e.id)}
-                            style={[
-                              styles.statusBadge,
-                              { backgroundColor: badge.bg, borderColor: badge.border },
-                            ]}
-                          >
-                            <View style={[styles.statusDot, { backgroundColor: badge.dot }]} />
-                            <Text style={[styles.statusText, { color: badge.text }]}>{badge.label}</Text>
-                          </Pressable>
-                        </View>
+                          <Text style={[styles.eventArtistTitle, { color: t.text }]}>{e.artist}</Text>
 
-                        <View style={[styles.fullCardFooter, { borderTopColor: t.borderSubtle }]}>
-                          <Pressable
-                            onPress={() => openEdit(e)}
-                            style={[styles.smallBtn, { backgroundColor: t.cardElevated, borderColor: t.border }]}
-                          >
-                            <Text style={[styles.smallBtnText, { color: t.text }]}>✏️ Editar</Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() => handleCycleStatus(e.id)}
-                            style={[styles.smallBtn, { backgroundColor: t.cardElevated, borderColor: t.border }]}
-                          >
-                            <Text style={[styles.smallBtnText, { color: t.primary }]}>🔄 Cambiar Estado</Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() => handleDelete(e.id)}
-                            style={[styles.smallBtn, { backgroundColor: t.cardElevated, borderColor: t.border }]}
-                          >
-                            <Text style={[styles.smallBtnText, { color: t.statRedText }]}>🗑️ Eliminar</Text>
-                          </Pressable>
+                          <View style={styles.eventMetaRow}>
+                            <MapPin size={13} color={t.textSub} />
+                            <Text style={[styles.eventMetaText, { color: t.textSub }]}>
+                              {e.space} · ID: {e.id}
+                            </Text>
+                          </View>
+
+                          <View style={[styles.eventActionsRow, { borderTopColor: t.borderSubtle }]}>
+                            <Pressable
+                              onPress={() => openEdit(e)}
+                              style={[styles.smallBtnOutline, { borderColor: t.border, backgroundColor: t.cardElevated }]}
+                            >
+                              <Edit3 size={13} color={t.text} />
+                              <Text style={[styles.smallBtnOutlineText, { color: t.text }]}>Editar</Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => handleCycleStatus(e.id)}
+                              style={[styles.smallBtnOutline, { borderColor: t.border, backgroundColor: t.cardElevated }]}
+                            >
+                              <RefreshCw size={13} color={t.primary} />
+                              <Text style={[styles.smallBtnOutlineText, { color: t.primary }]}>Estado</Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => handleDelete(e.id)}
+                              style={[styles.smallBtnOutline, { borderColor: t.redBorder, backgroundColor: t.redBg }]}
+                            >
+                              <Trash2 size={13} color={t.red} />
+                              <Text style={[styles.smallBtnOutlineText, { color: t.red }]}>Eliminar</Text>
+                            </Pressable>
+                          </View>
                         </View>
-                      </View>
-                    );
-                  })
+                      );
+                    })}
+                  </View>
                 )}
               </View>
-            </View>
-          )}
+            )}
 
-          {/* ===================== PAGE: FORM (CREAR / EDITAR) ===================== */}
-          {page === 'form' && (
-            <View style={styles.pageContainer}>
-              <View style={[styles.formCard, { backgroundColor: t.card, borderColor: t.border }]}>
-                <View style={styles.formHeader}>
-                  <Text style={[styles.formTitle, { color: t.text }]}>
+            {/* ===================== PAGE: FORM (CREAR / EDITAR) ===================== */}
+            {page === 'form' && (
+              <View style={[styles.formContainer, { backgroundColor: t.card, borderColor: t.border }]}>
+                <View style={styles.formTopInfo}>
+                  <Text style={[styles.formMainHeading, { color: t.text }]}>
                     {editingId ? 'Editar Concierto' : 'Crear Nuevo Concierto'}
                   </Text>
-                  <Text style={[styles.formSub, { color: t.textSub }]}>
+                  <Text style={[styles.formSubText, { color: t.textSub }]}>
                     {editingId
-                      ? `Modificando ID: ${editingId}`
-                      : 'Introduce la información del artista y su horario'}
+                      ? `Modificando registro ${editingId}`
+                      : 'Rellena los datos para incorporar la actuación al cartel'}
                   </Text>
                 </View>
 
                 {/* Field: Artista */}
-                <View style={styles.formGroup}>
-                  <Text style={[styles.fieldLabel, { color: t.textMuted }]}>NOMBRE DEL ARTISTA *</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: t.textMuted }]}>ARTISTA O GRUPO *</Text>
                   <TextInput
-                    accessibilityLabel="Nombre del artista"
-                    placeholder="Ej. THE CHEMICAL BROTHERS"
+                    placeholder="Ej. DAFT PUNK"
                     placeholderTextColor={t.textSub}
-                    style={[styles.formInput, { backgroundColor: t.inputBg, borderColor: t.inputBorder, color: t.text }]}
+                    style={[styles.textInput, { backgroundColor: t.inputBg, borderColor: t.inputBorder, color: t.text }]}
                     value={formArtist}
                     onChangeText={setFormArtist}
                   />
                 </View>
 
                 {/* Field: Escenario */}
-                <View style={styles.formGroup}>
-                  <Text style={[styles.fieldLabel, { color: t.textMuted }]}>ESCENARIO *</Text>
-                  <View style={styles.choicesRow}>
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: t.textMuted }]}>ESCENARIO *</Text>
+                  <View style={styles.optionsWrap}>
                     {stages.map(st => {
-                      const selected = formSpace === st;
+                      const sel = formSpace === st;
                       return (
                         <Pressable
                           key={st}
                           onPress={() => setFormSpace(st)}
                           style={[
-                            styles.choicePill,
+                            styles.optionChip,
                             {
-                              backgroundColor: selected ? t.heroBg : t.cardElevated,
-                              borderColor: selected ? t.primary : t.border,
+                              backgroundColor: sel ? t.primary : t.cardElevated,
+                              borderColor: sel ? t.primary : t.border,
                             },
                           ]}
                         >
                           <Text
                             style={[
-                              styles.choicePillText,
-                              { color: selected ? '#FFFFFF' : t.text },
-                              selected && { fontWeight: '700' },
+                              styles.optionChipText,
+                              { color: sel ? t.primaryText : t.text },
+                              sel && { fontWeight: '700' },
                             ]}
                           >
                             {st}
@@ -747,51 +836,46 @@ export default function App() {
                 </View>
 
                 {/* Field: Hora */}
-                <View style={styles.formGroup}>
-                  <Text style={[styles.fieldLabel, { color: t.textMuted }]}>HORA PROGRAMADA (HH:MM) *</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: t.textMuted }]}>HORA PROGRAMADA (HH:MM) *</Text>
                   <TextInput
-                    accessibilityLabel="Hora en formato HH:MM"
                     placeholder="22:30"
                     placeholderTextColor={t.textSub}
-                    style={[styles.formInput, { backgroundColor: t.inputBg, borderColor: t.inputBorder, color: t.text }]}
+                    style={[styles.textInput, { backgroundColor: t.inputBg, borderColor: t.inputBorder, color: t.text }]}
                     value={formTime}
                     onChangeText={setFormTime}
                   />
                 </View>
 
                 {/* Field: Estado */}
-                <View style={styles.formGroup}>
-                  <Text style={[styles.fieldLabel, { color: t.textMuted }]}>ESTADO INICIAL *</Text>
-                  <View style={styles.choicesRow}>
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: t.textMuted }]}>ESTADO INICIAL *</Text>
+                  <View style={styles.optionsWrap}>
                     {statuses.map(st => {
-                      const selected = formStatus === st;
-                      const badge = getStatusBadge(st);
+                      const sel = formStatus === st;
+                      const b = getStatusBadge(st);
+                      const Icon = b.Icon;
                       return (
                         <Pressable
                           key={st}
                           onPress={() => setFormStatus(st)}
                           style={[
-                            styles.choicePill,
+                            styles.optionChip,
                             {
-                              backgroundColor: selected ? badge.bg : t.cardElevated,
-                              borderColor: selected ? badge.border : t.border,
+                              backgroundColor: sel ? b.bg : t.cardElevated,
+                              borderColor: sel ? b.border : t.border,
                             },
                           ]}
                         >
-                          <View
-                            style={[
-                              styles.statusDot,
-                              { backgroundColor: selected ? badge.dot : t.textSub },
-                            ]}
-                          />
+                          <Icon size={13} color={sel ? b.color : t.textSub} />
                           <Text
                             style={[
-                              styles.choicePillText,
-                              { color: selected ? badge.text : t.textMuted },
-                              selected && { fontWeight: '700' },
+                              styles.optionChipText,
+                              { color: sel ? b.color : t.textMuted },
+                              sel && { fontWeight: '700' },
                             ]}
                           >
-                            {st}
+                            {b.label}
                           </Text>
                         </Pressable>
                       );
@@ -800,10 +884,10 @@ export default function App() {
                 </View>
 
                 {/* Actions */}
-                <View style={styles.formActionsRow}>
-                  <Pressable accessibilityRole="button" onPress={handleSave} style={styles.primaryPillBtn}>
-                    <Text style={styles.primaryPillBtnText}>
-                      {editingId ? 'Guardar Cambios' : 'Crear Evento'}
+                <View style={styles.formBtnRow}>
+                  <Pressable accessibilityRole="button" onPress={handleSave} style={[styles.saveBtn, { backgroundColor: t.primary }]}>
+                    <Text style={[styles.saveBtnText, { color: t.primaryText }]}>
+                      {editingId ? 'Guardar Cambios' : 'Añadir Actuación'}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -815,605 +899,764 @@ export default function App() {
                   </Pressable>
                 </View>
               </View>
-            </View>
-          )}
-
-          {/* Footer */}
-          <View style={[styles.footer, { borderTopColor: t.borderSubtle }]}>
-            <Text style={[styles.footerText, { color: t.textSub }]}>
-              FESTIVAL CONTROL · LIVE OPERATIONS DASHBOARD · EXPO + REACT NATIVE
-            </Text>
-          </View>
-        </ScrollView>
+            )}
+          </ScrollView>
+        </View>
       </View>
+
+      {/* ===================== MOBILE DRAWER NAVIGATION (MODAL OVERLAY) ===================== */}
+      {!wide && (
+        <Modal
+          visible={drawerOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setDrawerOpen(false)}
+        >
+          <View style={[styles.drawerBackdrop, { backgroundColor: t.drawerOverlay }]}>
+            <Pressable style={styles.drawerBackdropPress} onPress={() => setDrawerOpen(false)} />
+
+            {/* Sliding Drawer Content */}
+            <View style={[styles.drawerPanel, { backgroundColor: t.shellBg, borderColor: t.border }]}>
+              {/* Drawer Header */}
+              <View style={[styles.drawerHeader, { borderBottomColor: t.borderSubtle }]}>
+                <View style={styles.brandGroup}>
+                  <View style={[styles.brandMark, { backgroundColor: t.primary }]}>
+                    <Radio size={14} color={t.primaryText} />
+                  </View>
+                  <View>
+                    <Text style={[styles.brandName, { color: t.text }]}>FestOps</Text>
+                    <Text style={[styles.brandTag, { color: t.textSub }]}>DRAWER NAVIGATION</Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  accessibilityLabel="Cerrar menú"
+                  onPress={() => setDrawerOpen(false)}
+                  style={[styles.drawerCloseBtn, { borderColor: t.border, backgroundColor: t.cardElevated }]}
+                >
+                  <X size={16} color={t.text} />
+                </Pressable>
+              </View>
+
+              {/* Drawer Operator Info */}
+              <View style={[styles.drawerOperatorCard, { backgroundColor: t.cardElevated, borderColor: t.borderSubtle }]}>
+                <View style={[styles.profileAvatar, { backgroundColor: t.primary }]}>
+                  <User size={14} color={t.primaryText} />
+                </View>
+                <View>
+                  <Text style={[styles.profileName, { color: t.text }]}>Operador ZGZ</Text>
+                  <Text style={[styles.profileRole, { color: t.textSub }]}>Live Operations · ZGZ</Text>
+                </View>
+              </View>
+
+              {/* Drawer Nav Links */}
+              <View style={styles.drawerNavList}>
+                <Pressable
+                  onPress={() => {
+                    setPage('dashboard');
+                    setDrawerOpen(false);
+                  }}
+                  style={[
+                    styles.drawerNavItem,
+                    page === 'dashboard' && [styles.drawerNavItemActive, { backgroundColor: t.cardElevated, borderColor: t.border }],
+                  ]}
+                >
+                  <LayoutDashboard size={18} color={page === 'dashboard' ? t.primary : t.textMuted} />
+                  <Text style={[styles.drawerNavText, { color: page === 'dashboard' ? t.text : t.textMuted }]}>
+                    Panel de Control
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setPage('events');
+                    setDrawerOpen(false);
+                  }}
+                  style={[
+                    styles.drawerNavItem,
+                    page === 'events' && [styles.drawerNavItemActive, { backgroundColor: t.cardElevated, borderColor: t.border }],
+                  ]}
+                >
+                  <Calendar size={18} color={page === 'events' ? t.primary : t.textMuted} />
+                  <Text style={[styles.drawerNavText, { color: page === 'events' ? t.text : t.textMuted }]}>
+                    Programación
+                  </Text>
+                  <View style={[styles.drawerBadge, { backgroundColor: t.primary }]}>
+                    <Text style={[styles.drawerBadgeText, { color: t.primaryText }]}>{events.length}</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={openNew}
+                  style={[
+                    styles.drawerNavItem,
+                    page === 'form' && !editingId && [styles.drawerNavItemActive, { backgroundColor: t.cardElevated, borderColor: t.border }],
+                  ]}
+                >
+                  <PlusCircle size={18} color={page === 'form' ? t.primary : t.textMuted} />
+                  <Text style={[styles.drawerNavText, { color: page === 'form' ? t.text : t.textMuted }]}>
+                    Nuevo Concierto
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Drawer Stage Shortcuts */}
+              <View style={styles.drawerSection}>
+                <Text style={[styles.drawerSectionTitle, { color: t.textSub }]}>ESCENARIOS</Text>
+                {stages.map(st => (
+                  <Pressable
+                    key={st}
+                    onPress={() => {
+                      setStageFilter(st);
+                      setPage('events');
+                      setDrawerOpen(false);
+                    }}
+                    style={styles.drawerStageRow}
+                  >
+                    <MapPin size={13} color={t.textSub} />
+                    <Text style={[styles.drawerStageName, { color: t.text }]}>{st}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Drawer Footer: Theme Toggle */}
+              <View style={[styles.drawerFooter, { borderTopColor: t.borderSubtle }]}>
+                <Pressable
+                  onPress={toggleTheme}
+                  style={[styles.drawerThemeBtn, { backgroundColor: t.cardElevated, borderColor: t.border }]}
+                >
+                  {themeMode === 'dark' ? <Sun size={16} color={t.text} /> : <Moon size={16} color={t.text} />}
+                  <Text style={[styles.drawerThemeText, { color: t.text }]}>
+                    {themeMode === 'dark' ? 'Cambiar a Modo Claro' : 'Cambiar a Modo Oscuro'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
+  viewport: {
     flex: 1,
   },
   shell: {
     flex: 1,
-    flexDirection: 'column',
-  },
-  shellWide: {
-    flexDirection: 'row',
+    margin: 0,
+    overflow: 'hidden',
   },
 
-  // Sidebar (Desktop)
-  sidebar: {
-    width: 250,
-    borderRightWidth: 1,
-    padding: 24,
+  // Global Header
+  globalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  // Mobile Nav (Phones / Small screens)
-  mobileNav: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    gap: 12,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  brandIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  brandSub: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginTop: 2,
-  },
-  userCard: {
-    marginVertical: 20,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  userName: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  userRole: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 3,
-  },
-  navGroup: {
-    gap: 8,
-    flex: 1,
-  },
-  mobileNavGroup: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  navBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  navBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  countBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  countText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  sidebarFooter: {
-    paddingTop: 16,
-    borderTopWidth: 1,
-    gap: 12,
-  },
-  themeToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  themeLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  toggleSwitch: {
-    width: 38,
-    height: 20,
-    borderRadius: 10,
-    padding: 2,
-    justifyContent: 'center',
-  },
-  toggleKnob: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-  },
-  liveIndicatorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 4,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  liveText: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-
-  // Main Content
-  mainScroll: {
-    flex: 1,
-  },
-  mainContent: {
-    padding: 24,
-    paddingBottom: 60,
-  },
-  topHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  greeting: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  greetingSub: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  mobileThemeBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  alertBanner: {
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 20,
-  },
-  alertText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  pageContainer: {
-    gap: 24,
-  },
-
-  // Hero Card ("My Card" aesthetic)
-  heroCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 26,
-    gap: 18,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  heroTagBadge: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  heroTagText: {
-    color: '#94A3B8',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
-  heroLiveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(52,211,153,0.12)',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  heroLiveText: {
-    color: '#34D399',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  heroBody: {
-    gap: 6,
-  },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '900',
-    letterSpacing: -1,
-  },
-  heroTime: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  heroActionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  heroBtnPrimary: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 24,
-    alignItems: 'center',
-  },
-  heroBtnPrimaryText: {
-    color: '#0F172A',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  heroBtnSecondary: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 24,
-    alignItems: 'center',
-  },
-  heroBtnSecondaryText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  // KPI Stats Cards (Financial Record style)
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  sectionSub: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  statsRow: {
-    flexDirection: 'column',
-    gap: 14,
-  },
-  statsRowWide: {
-    flexDirection: 'row',
-  },
-  statCard: {
-    flex: 1,
-    padding: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 10,
-  },
-  statHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  statValue: {
-    fontSize: 32,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  statFooter: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Split Grid (Escenarios + Timeline)
-  splitGrid: {
-    gap: 20,
-  },
-  splitGridWide: {
-    flexDirection: 'row',
-  },
-  splitCol: {
-    flex: 1,
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 20,
     gap: 16,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  cardSubtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  cardLink: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  stagesList: {
-    gap: 10,
-  },
-  stageItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 13,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  stageItemLeft: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    flex: 1,
   },
-  stageBadgeIcon: {
+  hamburgerBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  brandMark: {
     width: 32,
     height: 32,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stageNumberText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  stageName: {
-    fontSize: 13,
+  brandName: {
+    fontSize: 16,
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
-  stageSub: {
-    fontSize: 11,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  stageCountPill: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  stageCountText: {
-    fontSize: 10,
+  brandTag: {
+    fontSize: 9,
     fontWeight: '700',
+    letterSpacing: 1,
   },
-
-  // Feed / Transactions style list
-  eventsFeedList: {
-    gap: 12,
+  headerCenter: {
+    flex: 1,
+    maxWidth: 550,
   },
-  feedItem: {
-    padding: 15,
-    borderRadius: 16,
+  headerPills: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  headerPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
+  },
+  headerPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  liveChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
-  },
-  feedItemHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  timePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  timeText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
     borderWidth: 1,
   },
-  statusDot: {
+  livePulse: {
     width: 6,
     height: 6,
     borderRadius: 3,
   },
-  statusText: {
-    fontSize: 9,
-    fontWeight: '900',
+  liveChipText: {
+    fontSize: 10,
+    fontWeight: '800',
     letterSpacing: 0.5,
   },
-  feedArtist: {
-    fontSize: 16,
-    fontWeight: '900',
-    marginTop: 4,
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  feedSpace: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  feedActions: {
+  profileChip: {
     flexDirection: 'row',
-    gap: 16,
-    borderTopWidth: 1,
-    paddingTop: 10,
-    marginTop: 6,
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
   },
-  actionBtn: {
-    paddingVertical: 2,
+  profileAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  actionBtnText: {
-    fontSize: 11,
+  profileName: {
+    fontSize: 12,
     fontWeight: '700',
   },
-
-  // Programación (Events view)
-  eventsHeaderCard: {
-    padding: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 16,
+  profileRole: {
+    fontSize: 10,
+    fontWeight: '500',
   },
-  eventsHeaderTop: {
+
+  // Shell Body
+  shellBody: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+
+  // Desktop Left Rail
+  leftRail: {
+    width: 72,
+    borderRightWidth: 1,
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  railNavGroup: {
+    gap: 14,
+    alignItems: 'center',
+  },
+  railBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  railBtnActive: {
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  railTooltip: {
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  railBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  railBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  railFooter: {
+    alignItems: 'center',
+  },
+
+  // Workspace Scroll
+  workspaceScroll: {
+    flex: 1,
+  },
+  workspaceContainer: {
+    padding: 24,
+    paddingBottom: 60,
+    gap: 20,
+  },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  feedbackText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  titleSection: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 16,
   },
-  primaryPillBtn: {
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+  kickerText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
   },
-  primaryPillBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
+  h1Text: {
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginTop: 4,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
     borderWidth: 1,
+    minWidth: 260,
   },
   searchInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     padding: 0,
   },
-  filterPillsContainer: {
+
+  // Dashboard 3-Column Grid
+  dashboardGrid: {
     flexDirection: 'row',
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 20,
   },
-  filterPill: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    borderRadius: 10,
+  dashCard: {
+    flex: 1,
+    minWidth: 280,
+    borderRadius: 14,
     borderWidth: 1,
+    padding: 20,
+    gap: 16,
   },
-  filterPillText: {
-    fontSize: 11,
-    fontWeight: '600',
+  dashColMiddle: {
+    flex: 1,
+    minWidth: 280,
+    gap: 20,
   },
-  eventsList: {
-    gap: 12,
-  },
-  fullEventCard: {
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 14,
-  },
-  fullCardHeader: {
+  cardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 10,
   },
-  fullCardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  timeBadgeLarge: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  timeBadgeLargeText: {
+  cardTitle: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: '800',
   },
-  fullArtist: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  fullSpace: {
-    fontSize: 12,
-    fontWeight: '600',
+  cardSub: {
+    fontSize: 11,
+    fontWeight: '500',
     marginTop: 2,
   },
-  fullCardFooter: {
+  smallActionBtn: {
     flexDirection: 'row',
-    gap: 10,
-    borderTopWidth: 1,
-    paddingTop: 12,
-  },
-  smallBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 9,
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
     borderWidth: 1,
   },
-  smallBtnText: {
+  smallActionBtnText: {
     fontSize: 11,
     fontWeight: '700',
   },
-  emptyStateCard: {
-    padding: 40,
-    borderRadius: 20,
+
+  // Live Feed
+  feedList: {
+    gap: 10,
+  },
+  feedRow: {
+    borderRadius: 10,
     borderWidth: 1,
+    padding: 12,
+    gap: 8,
+  },
+  feedRowMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  timeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  timeBoxText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  artistInfo: {
+    flex: 1,
+  },
+  artistName: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  stageLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 2,
+  },
+  stageLocationText: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  statusPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  rowActions: {
+    flexDirection: 'row',
+    gap: 14,
+    borderTopWidth: 1,
+    paddingTop: 8,
+  },
+  actionLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionLinkText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  viewAllFooter: {
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  viewAllText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Progress Bars (Middle Col)
+  metricCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  metricCountText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  barsGroup: {
+    gap: 14,
+  },
+  barItem: {
+    gap: 6,
+  },
+  barLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  barTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  barTitleText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  barValueText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+
+  // Spotlight Card
+  spotlightCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20,
+    gap: 10,
+  },
+  spotlightTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  spotlightBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  spotlightBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  spotlightTime: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  spotlightArtist: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  spotlightStage: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  spotlightBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  spotlightBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Stages Stack
+  stagesStack: {
+    gap: 10,
+  },
+  stageCard: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 6,
+  },
+  stageCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  stageTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stageIndexBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stageIndexText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  stageTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  stageCountChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  stageCountChipText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  stageNextText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+
+  // Programación (Events view)
+  eventsContainer: {
+    gap: 16,
+  },
+  filterBar: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flexWrap: 'wrap',
+  },
+  filterBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  filterBarTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  filterPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  filterPillItem: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  filterPillItemText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  eventsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  eventDetailCard: {
+    flex: 1,
+    minWidth: 280,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 16,
+    gap: 10,
+  },
+  eventCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  timeTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  timeTagText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  eventArtistTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  eventMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  eventMetaText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  eventActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    borderTopWidth: 1,
+    paddingTop: 10,
+  },
+  smallBtnOutline: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  smallBtnOutlineText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyContainer: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 40,
     alignItems: 'center',
     gap: 8,
   },
@@ -1421,103 +1664,211 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-  emptySub: {
+  emptySubtitle: {
     fontSize: 12,
     textAlign: 'center',
-    maxWidth: 400,
   },
-  resetBtn: {
-    marginTop: 10,
+  emptyResetBtn: {
+    marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 6,
   },
-  resetBtnText: {
-    fontSize: 12,
+  emptyResetBtnText: {
+    fontSize: 11,
     fontWeight: '700',
   },
 
   // Form View
-  formCard: {
-    padding: 24,
-    borderRadius: 22,
-    borderWidth: 1,
-    gap: 20,
-    maxWidth: 700,
+  formContainer: {
+    maxWidth: 620,
     width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 24,
+    gap: 18,
     alignSelf: 'center',
   },
-  formHeader: {
+  formTopInfo: {
     gap: 4,
   },
-  formTitle: {
-    fontSize: 20,
+  formMainHeading: {
+    fontSize: 18,
     fontWeight: '900',
   },
-  formSub: {
+  formSubText: {
     fontSize: 12,
-    fontWeight: '600',
   },
-  formGroup: {
-    gap: 8,
+  inputGroup: {
+    gap: 6,
   },
-  fieldLabel: {
+  inputLabel: {
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
-  formInput: {
+  textInput: {
+    borderRadius: 8,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
   },
-  choicesRow: {
+  optionsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  choicePill: {
+  optionChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
     borderWidth: 1,
   },
-  choicePillText: {
-    fontSize: 12,
+  optionChipText: {
+    fontSize: 11,
     fontWeight: '600',
   },
-  formActionsRow: {
+  formBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginTop: 10,
+    gap: 10,
+    marginTop: 8,
   },
-  cancelBtn: {
+  saveBtn: {
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 8,
+  },
+  saveBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  cancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
     borderWidth: 1,
   },
   cancelBtnText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
 
-  // Footer
-  footer: {
-    marginTop: 30,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    alignItems: 'center',
+  // Drawer Navigation (Mobile Overlay)
+  drawerBackdrop: {
+    flex: 1,
+    flexDirection: 'row',
   },
-  footerText: {
-    fontSize: 10,
+  drawerBackdropPress: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  drawerPanel: {
+    width: 290,
+    height: '100%',
+    borderRightWidth: 1,
+    padding: 20,
+    gap: 16,
+    elevation: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    shadowOffset: { width: 4, height: 0 },
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  drawerCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerOperatorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  drawerNavList: {
+    gap: 6,
+  },
+  drawerNavItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  drawerNavItemActive: {
+    borderWidth: 1,
+  },
+  drawerNavText: {
+    fontSize: 13,
     fontWeight: '700',
+    flex: 1,
+  },
+  drawerBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  drawerBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  drawerSection: {
+    gap: 8,
+    paddingTop: 8,
+  },
+  drawerSectionTitle: {
+    fontSize: 10,
+    fontWeight: '800',
     letterSpacing: 1,
+  },
+  drawerStageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  drawerStageName: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  drawerFooter: {
+    marginTop: 'auto',
+    paddingTop: 14,
+    borderTopWidth: 1,
+  },
+  drawerThemeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  drawerThemeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
